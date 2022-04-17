@@ -1,5 +1,5 @@
 {
-  "name": "New Game",
+  "name": "First Person Shooter",
   "tree": {
     "$className": "DataModel",
     "Lighting": {

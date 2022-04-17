@@ -1,0 +1,10 @@
+{
+	"Lua.workspace.maxPreload": 300000,
+	"editor.insertSpaces": false,
+	"editor.detectIndentation": false,
+	"robloxLsp.diagnostics.disable": [
+		"count-down-loop",
+		"count-down-loop"
+	],
+	"robloxLsp.workspace.maxPreload": 2000
+}

@@ -6,14 +6,15 @@ local RunService = game:GetService("RunService")
 
 local SHARED_MODULE_PATHS = {
 	ReplicatedStorage.SharedScripts;
+	ReplicatedStorage.Libraries;
 }
 local SERVER_MODULES_PATH
 local CLIENT_MODULES_PATH = StarterPlayer.StarterPlayerScripts.ClientScripts
 
 local LoadedSignal = Instance.new("BindableEvent")
 
-local Promise = require(ReplicatedStorage.ZenithFramework.Libraries.Promise)
-local Roact = ReplicatedStorage.ZenithFramework.Libraries.Roact
+local Promise = require(ReplicatedStorage.Libraries.Promise)
+local Roact = ReplicatedStorage.Libraries.Roact
 
 local ModuleScriptLoader = {}
 ModuleScriptLoader.__index = ModuleScriptLoader
@@ -70,7 +71,7 @@ end
 -- Looks for the module in the table and returns it if found
 function ModuleScriptLoader:requireModule(moduleName)
 	assert(type(moduleName) == "string")
-
+	print("Trying to require module: " , moduleName)
 	if self._modules[moduleName] then
 		return require(self._modules[moduleName])
 	end

@@ -12,7 +12,7 @@ local UserInterface = Roact.createElement(MainInterface)
 
 -- When this module runs, mount the main interface
 function UserInterface:initiate()
-	--Roact.mount(UserInterface, Player:WaitForChild("PlayerGui"))
+	Roact.mount(UserInterface, Player:WaitForChild("PlayerGui"))
 end
 
 return UserInterface

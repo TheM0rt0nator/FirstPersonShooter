@@ -71,7 +71,6 @@ end
 -- Looks for the module in the table and returns it if found
 function ModuleScriptLoader:requireModule(moduleName)
 	assert(type(moduleName) == "string")
-	print("Trying to require module: " , moduleName)
 	if self._modules[moduleName] then
 		return require(self._modules[moduleName])
 	end

@@ -9,6 +9,8 @@ local KitInfoFrame = loadModule("KitInfoFrame")
 local KitButtonTemplate = loadModule("KitButtonTemplate")
 local WeaponKits = loadModule("WeaponKits")
 
+local spawnPlayerEvent = getDataStream("SpawnPlayerEvent", "RemoteEvent")
+
 local KitSelection = Roact.Component:extend("KitSelection")
 
 -- Set up the timer binding
@@ -120,7 +122,7 @@ function KitSelection:render()
 				TextScaled = true;
 				BackgroundColor3 = Color3.new(1, 1, 1);
 				[Roact.Event.MouseButton1Click] = function()
-					print("Spawning player")
+					spawnPlayerEvent:FireServer("Assault")
 				end;
 			}, {
 				UICorner = UICorner(0.2, 0);

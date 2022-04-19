@@ -10,11 +10,13 @@ local Maid = loadModule("Maid")
 local MainInterface = Roact.Component:extend("MainInterface")
 
 local Components = {
+	HitMarkers = loadModule("HitMarkers");
 	KitSelection = loadModule("KitSelection");
 }
 
 local InterfaceStates = {
 	kitSelection = {
+		"HitMarkers";
 		"KitSelection";
 	};
 }

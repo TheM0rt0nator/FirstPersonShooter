@@ -110,10 +110,10 @@ function KitSelection:render()
 				UICorner = UICorner(0.1, 0);
 			});
 	
-			SpawnButton = Roact.createElement("TextButton", {
+			DeployButton = Roact.createElement("TextButton", {
 				FontSize = Enum.FontSize.Size14;
 				TextColor3 = Color3.new(0, 0, 0);
-				Text = "Spawn";
+				Text = "DEPLOY";
 				AnchorPoint = Vector2.new(0.5, 0);
 				Font = Enum.Font.Oswald;
 				Name = "SpawnButton";

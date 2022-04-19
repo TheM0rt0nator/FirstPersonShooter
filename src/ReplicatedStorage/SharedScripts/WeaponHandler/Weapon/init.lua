@@ -10,8 +10,10 @@ local Maths = loadModule("Maths")
 local Spring = loadModule("Spring")
 local UserInput = loadModule("UserInput")
 local Keybinds = loadModule("Keybinds")
+local HitDetector = loadModule("HitDetector")
 
 local rand = Random.new()
+local gravity = Vector3.new(0, workspace.Gravity, 0)
 
 local Weapon = {}
 Weapon.__index = Weapon
@@ -22,6 +24,7 @@ function Weapon.new(name)
 		name = name;
 		canFire = true;
 		loadedAnimations = {};
+		hitDetector = HitDetector.new();
 		springs = {
 			movementTilt = Spring.new();
 			walkCycle = Spring.new();
@@ -37,6 +40,10 @@ function Weapon.new(name)
 		};
 	}
 
+	-- Connect a listener to the hit event so we can do damage etc
+	self.hitConnection = self.hitDetector.hitEvent.Event:Connect(function(part)
+		print("HIT SOMETHING: " , part.Name)
+	end)
 	setmetatable(self, Weapon)
 
 	return self
@@ -72,10 +79,11 @@ function Weapon:equip()
 	
     -- Save the settings table
 	self.settings = require(self.viewmodel.Settings)
+	self.weaponStats = self.settings.weaponStats
 
 	-- Setup the magazine and ammunition
-	self.ammo = self.settings.weaponStats.magCapacity
-	self.spareBullets = self.settings.weaponStats.spareBullets
+	self.ammo = self.weaponStats.magCapacity
+	self.spareBullets = self.weaponStats.spareBullets
 
     -- Load animations from settings
 	self:loadAnimations()
@@ -143,16 +151,28 @@ function Weapon:fire(bool)
 		self.ammo -= 1
 		print(self.ammo)
 
+		-- Fire a raycast bullet to calculate actual hits
+		local origin = self.viewmodel.Barrel.Position
+		local bulletDirection = (self.viewmodel.Muzzle.Position - origin).Unit
+
+		local bullet = ReplicatedStorage.Assets.Other.Bullet:Clone()
+		bullet.Size = Vector3.new(0.05, 0.05, self.weaponStats.velocity / 200)
+		bullet.CFrame = CFrame.new(origin + bulletDirection * bullet.Size.Z, origin + bulletDirection * bullet.Size.Z * 2)
+		bullet.Parent = workspace
+		bullet.AssemblyLinearVelocity = bulletDirection * self.weaponStats.velocity
+
+		self.hitDetector:fire(origin, bulletDirection * self.weaponStats.velocity, gravity, self.weaponStats.range, "Blacklist", {self.viewmodel, self.char})
+
 		-- Shove the recoil spring to make the camera shake when we shoot, using the values from this guns settings to change the amount of recoil
-		local verticalRecoil = rand:NextNumber(0.15, 0.2) * self.recoilFactor * (self.settings.weaponStats.verticalRecoilFactor or 1)
-		local horizontalRecoil = rand:NextNumber(-0.05, 0.05) * self.recoilFactor * (self.settings.weaponStats.horizontalRecoilFactor or 1)
+		local verticalRecoil = rand:NextNumber(0.15, 0.2) * self.recoilFactor * (self.weaponStats.verticalRecoilFactor or 1)
+		local horizontalRecoil = rand:NextNumber(-0.05, 0.05) * self.recoilFactor * (self.weaponStats.horizontalRecoilFactor or 1)
 		self.springs.recoil:shove(Vector3.new(verticalRecoil, horizontalRecoil, 0))
 		task.spawn(function()
 			task.wait(.15)
 			self.springs.recoil:shove(Vector3.new(-verticalRecoil, -horizontalRecoil, 0))
 		end)
 		
-		task.wait(60 / self.settings.weaponStats.rpm)
+		task.wait(60 / self.weaponStats.rpm)
 	end
 	
 	-- Keep firing the gun until the firing value is set to false, and ensure the function only runs once per fire
@@ -191,17 +211,17 @@ end
 -- Runs the reloading animation and resets the guns ammo
 function Weapon:reload()
 	if self.reloading then return end
-	if self.ammo == self.settings.weaponStats.magCapacity or self.spareBullets <= 0 then return end
+	if self.ammo == self.weaponStats.magCapacity or self.spareBullets <= 0 then return end
 	self.reloading = true
 	-- Run animation
 	task.wait(3)
-	local neededBullets = self.settings.weaponStats.magCapacity - self.ammo
+	local neededBullets = self.weaponStats.magCapacity - self.ammo
 	local givenBullets = neededBullets
 	if neededBullets > self.spareBullets then
 		givenBullets = self.spareBullets
 	end
 	self.spareBullets -= givenBullets
-	self.spareBullets = math.clamp(self.spareBullets, 0, self.settings.weaponStats.spareBullets)
+	self.spareBullets = math.clamp(self.spareBullets, 0, self.weaponStats.spareBullets)
 	self.ammo += givenBullets
 	self.canFire = true
 	print(self.ammo, self.spareBullets)
@@ -383,7 +403,7 @@ function Weapon:update(dt)
 		self.camera.CFrame *= CFrame.Angles(camSway.X, camSway.Y, camSway.Z)
 
 		-- Less recoil when we're aiming
-		self.recoilFactor = if self.aiming then self.settings.weaponStats.aimRecoilFactor else 1
+		self.recoilFactor = if self.aiming then self.weaponStats.aimRecoilFactor else 1
 
 		-- Apply all of these movements to the viewmodels CFrame
 		self.viewmodel.RootPart.CFrame = self.camera.CFrame:ToWorldSpace(finalOffset) * CFrame.Angles(0, math.pi, 0)

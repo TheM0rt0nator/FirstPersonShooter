@@ -12,6 +12,8 @@ local UserInput = loadModule("UserInput")
 local Keybinds = loadModule("Keybinds")
 local HitDetector = loadModule("HitDetector")
 
+local hitPlayerEvent = getDataStream("HitPlayerEvent", "BindableEvent")
+
 local rand = Random.new()
 local gravity = Vector3.new(0, workspace.Gravity, 0)
 
@@ -42,7 +44,11 @@ function Weapon.new(name)
 
 	-- Connect a listener to the hit event so we can do damage etc
 	self.hitConnection = self.hitDetector.hitEvent.Event:Connect(function(part)
-		print("HIT SOMETHING: " , part.Name)
+		if part.Parent and part.Parent:FindFirstChild("Humanoid") and part.Parent.Humanoid.Health > 0 then
+			part.Parent.Humanoid:TakeDamage(5)
+			-- Fire a bindable to tell the UI to show hitmarkers
+			hitPlayerEvent:Fire(part)
+		end
 	end)
 	setmetatable(self, Weapon)
 
@@ -123,7 +129,7 @@ function Weapon:fire(bool)
 	self.firing = bool
 	if not bool then return end
 	if self.isSprinting then
-		self:sprint(false)
+		self:sprint(false, true)
 	end
 
 	local function fire()
@@ -151,7 +157,7 @@ function Weapon:fire(bool)
 		self.ammo -= 1
 		print(self.ammo)
 
-		-- Fire a raycast bullet to calculate actual hits
+		-- Render a real bullet for visuals
 		local origin = self.viewmodel.Barrel.Position
 		local bulletDirection = (self.viewmodel.Muzzle.Position - origin).Unit
 
@@ -160,7 +166,7 @@ function Weapon:fire(bool)
 		bullet.CFrame = CFrame.new(origin + bulletDirection * bullet.Size.Z, origin + bulletDirection * bullet.Size.Z * 2)
 		bullet.Parent = workspace
 		bullet.AssemblyLinearVelocity = bulletDirection * self.weaponStats.velocity
-
+		-- Fire a raycast bullet to calculate actual hits
 		self.hitDetector:fire(origin, bulletDirection * self.weaponStats.velocity, gravity, self.weaponStats.range, "Blacklist", {self.viewmodel, self.char})
 
 		-- Shove the recoil spring to make the camera shake when we shoot, using the values from this guns settings to change the amount of recoil
@@ -192,7 +198,7 @@ function Weapon:aim(bool)
 	
 	if bool then
 		if self.isSprinting then
-			self:sprint(false)
+			self:sprint(false, true)
 		end
 		local tweeningInformation = TweenInfo.new(.7, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		local properties = {Value = 1}
@@ -229,14 +235,17 @@ function Weapon:reload()
 end
 
 -- Enable / disable sprinting by chaning walkspeed and cancelling shooting and aiming
-function Weapon:sprint(bool)
+function Weapon:sprint(bool, changeIsSprinting)
 	if not self.char or not self.char:FindFirstChild("Humanoid") then return end
-	self.isSprinting = bool
+	if changeIsSprinting then
+		self.isSprinting = bool
+	end
 	self.char.Humanoid.WalkSpeed = if bool then (self.settings.sprintSpeed or 25) else 16
 	local tweenTo = bool and 1 or 0
 	local tweeningInformation = TweenInfo.new(.7, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 	local properties = {Value = tweenTo}
 	TweenService:Create(self.lerpValues.sprint, tweeningInformation, properties):Play()
+	self.sprintStance = bool
 	if not bool then return end
 	self:aim(false)
 	self:fire(false)
@@ -290,10 +299,10 @@ function Weapon:connectInput()
 		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
 		UserInput.connectInput(inputType, keybind, "Sprint" .. bindNum, {
 			beganFunc = function()
-				self:sprint(true)
+				self:sprint(true, true)
 			end;
 			endedFunc = function()
-				self:sprint(false)
+				self:sprint(false, true)
 			end;
 		}, true)
 	end
@@ -351,6 +360,13 @@ function Weapon:update(dt)
 			self.springs.movementTilt:shove(Vector3.new(math.rad(-forwardBackDir * 2), 0, math.rad(-leftRightDir * 2)))
 		end
 
+		-- Cancel out the sprint stance if we are not moving or are moving backwards
+		if self.isSprinting and (math.abs(velocity.Magnitude) < 1 or (math.abs(forwardBackDir) > 0.1 and forwardBackDir < 0.1)) and self.sprintStance then
+			self:sprint(false)
+		elseif self.isSprinting and (math.abs(velocity.Magnitude) > 1 and math.abs(forwardBackDir) > 0.1 and forwardBackDir > 0.1) and not self.sprintStance then
+			self:sprint(true)
+		end
+
 		-- Add the aim offset to the final offset
 		local idleOffset = self.viewmodel.Offsets.Idle.Value --* CFrame.Angles(xTilt * ((movementDirection.X > 0 and 1) or -1), 0, zTilt * ((movementDirection.Z > 0 and 1) or -1))
 		local aimOffset = idleOffset:lerp(self.viewmodel.Offsets.Aim.Value, self.lerpValues.aim.Value)
@@ -365,13 +381,13 @@ function Weapon:update(dt)
 			-- Reduce walkspeed if we are walking backwards
 			self.char.Humanoid.WalkSpeed = 16 - ((16 - aimWalkspeed) * self.lerpValues.walkspeed.Value) - backwardsReduction
 		else
-			self.char.Humanoid.WalkSpeed = (self.settings.sprintSpeed or 25) - backwardsReduction
+			self.char.Humanoid.WalkSpeed = (self.settings.sprintSpeed or 25) - backwardsReduction * 2
 		end
 		
 		-- Get the amount the mouse has moved and apply this to the sway spring, so we can sway the viewmodel based on camera movement
 		local mouseDelta = UserInputService:GetMouseDelta()
 		if self.aiming then mouseDelta *= 0.7 end
-		self.springs.sway:shove(Vector3.new(mouseDelta.X / 300, mouseDelta.Y / 300, 0))
+		self.springs.sway:shove(Vector3.new(math.clamp(mouseDelta.X, -50, 50) / 300, math.clamp(mouseDelta.Y, -50, 50) / 300, 0))
 		
 		local frequency = 1
 		local amplitude = 0.1
@@ -414,7 +430,5 @@ function Weapon:update(dt)
 		self.viewmodel.RootPart.CFrame *= CFrame.Angles(walkCycle.Y / 3, walkCycle.X / 3, 0)
 	end
 end
-
---0.699999988, -1.20000005, -1.10000002, -0.969846249, -0.171010062, -0.173648179, -0.141314477, 0.975082397, -0.171010062, 0.198565722, -0.141314477, -0.969846249
 
 return Weapon

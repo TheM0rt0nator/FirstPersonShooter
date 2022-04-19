@@ -11,7 +11,7 @@ function Maths.getSine(a, b, c, x)
 	b = b or 1
 	c = c or 0
 	x = x or tick()
-	return a * math.sin(b * x + c)
+	return a * math.sin((b * x) + c)
 end
 
 -- Returns the mode index-value pairs from a given table (supports multiple modes)

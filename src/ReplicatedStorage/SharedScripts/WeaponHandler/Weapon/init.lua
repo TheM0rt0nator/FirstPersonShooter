@@ -23,6 +23,7 @@ function Weapon.new(name)
 		canFire = true;
 		loadedAnimations = {};
 		springs = {
+			movementTilt = Spring.new();
 			walkCycle = Spring.new();
 			sway = Spring.new();
 			recoil = Spring.new(4, 100, nil, 6);
@@ -30,6 +31,9 @@ function Weapon.new(name)
 		lerpValues = {
 			aim = Instance.new("NumberValue");
 			walkspeed = Instance.new("NumberValue");
+			sprint = Instance.new("NumberValue");
+			-- This is so that the sprint offset doesn't apply when we are stationary or going backwards
+			idleOverride = Instance.new("NumberValue");
 		};
 	}
 
@@ -69,6 +73,10 @@ function Weapon:equip()
     -- Save the settings table
 	self.settings = require(self.viewmodel.Settings)
 
+	-- Setup the magazine and ammunition
+	self.ammo = self.settings.weaponStats.magCapacity
+	self.spareBullets = self.settings.weaponStats.spareBullets
+
     -- Load animations from settings
 	self:loadAnimations()
 	self.loadedAnimations.idle:Play(0) --no lerp time from default pos to prevent stupid looking arms for no longer than 0 frames	
@@ -95,13 +103,26 @@ function Weapon:fire(bool)
 	-- Check to make sure we can fire the weapon
 	if self.reloading or not self.equipped then return end
 	if self.firing and bool then return end 
+
+	if bool and self.ammo <= 0 then
+		self:reload()
+		return
+	end
+
 	if not self.canFire and bool then return end
 
 	-- Set the firing value to the bool and then return if we are not firing anymore
 	self.firing = bool
-	if not bool or self.isSprinting then return end
+	if not bool then return end
+	if self.isSprinting then
+		self:sprint(false)
+	end
 
 	local function fire()
+		if self.ammo <= 0 then 
+			self.firing = false 
+			return 
+		end
 		-- Play the firing sound every time we fire
 		local sound = self.viewmodel.Receiver.FireSound:Clone()
 		sound.Parent = self.viewmodel.Receiver
@@ -117,6 +138,10 @@ function Weapon:fire(bool)
 				v:Emit(v.Rate)
 			end
 		end	
+
+		-- Take one round out of the ammo every time we fire
+		self.ammo -= 1
+		print(self.ammo)
 
 		-- Shove the recoil spring to make the camera shake when we shoot, using the values from this guns settings to change the amount of recoil
 		local verticalRecoil = rand:NextNumber(0.15, 0.2) * self.recoilFactor * (self.settings.weaponStats.verticalRecoilFactor or 1)
@@ -163,11 +188,35 @@ function Weapon:aim(bool)
 	end
 end
 
+-- Runs the reloading animation and resets the guns ammo
+function Weapon:reload()
+	if self.reloading then return end
+	if self.ammo == self.settings.weaponStats.magCapacity or self.spareBullets <= 0 then return end
+	self.reloading = true
+	-- Run animation
+	task.wait(3)
+	local neededBullets = self.settings.weaponStats.magCapacity - self.ammo
+	local givenBullets = neededBullets
+	if neededBullets > self.spareBullets then
+		givenBullets = self.spareBullets
+	end
+	self.spareBullets -= givenBullets
+	self.spareBullets = math.clamp(self.spareBullets, 0, self.settings.weaponStats.spareBullets)
+	self.ammo += givenBullets
+	self.canFire = true
+	print(self.ammo, self.spareBullets)
+	self.reloading = false
+end
+
 -- Enable / disable sprinting by chaning walkspeed and cancelling shooting and aiming
 function Weapon:sprint(bool)
 	if not self.char or not self.char:FindFirstChild("Humanoid") then return end
 	self.isSprinting = bool
 	self.char.Humanoid.WalkSpeed = if bool then (self.settings.sprintSpeed or 25) else 16
+	local tweenTo = bool and 1 or 0
+	local tweeningInformation = TweenInfo.new(.7, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+	local properties = {Value = tweenTo}
+	TweenService:Create(self.lerpValues.sprint, tweeningInformation, properties):Play()
 	if not bool then return end
 	self:aim(false)
 	self:fire(false)
@@ -247,7 +296,7 @@ function Weapon:connectInput()
 		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
 		UserInput.connectInput(inputType, keybind, "ReloadWeapon" .. bindNum, {
 			beganFunc = function()
-				print("Reload gun")
+				self:reload()
 			end;
 		}, true)
 	end
@@ -273,15 +322,30 @@ function Weapon:update(dt)
 		-- Get the players velocity
 		local velocity = self.char.HumanoidRootPart.AssemblyLinearVelocity
 
+		-- Get the players movement direction relative to the camera so we can tilt the viewmodel
+		local forwardBackDir = self.char.Humanoid.MoveDirection:Dot(self.camera.CFrame.LookVector)
+		local leftRightDir = self.char.Humanoid.MoveDirection:Dot(self.camera.CFrame.RightVector)
+
+		-- Only tilt the viewport if we are not aiming
+		if not self.aiming then
+			self.springs.movementTilt:shove(Vector3.new(math.rad(-forwardBackDir * 2), 0, math.rad(-leftRightDir * 2)))
+		end
+
 		-- Add the aim offset to the final offset
-		local idleOffset = self.viewmodel.Offsets.Idle.Value
+		local idleOffset = self.viewmodel.Offsets.Idle.Value --* CFrame.Angles(xTilt * ((movementDirection.X > 0 and 1) or -1), 0, zTilt * ((movementDirection.Z > 0 and 1) or -1))
 		local aimOffset = idleOffset:lerp(self.viewmodel.Offsets.Aim.Value, self.lerpValues.aim.Value)
-		local finalOffset = aimOffset
+		-- Only want the sprint offset to apply if we are actually sprinting
+		local sprintOffset = aimOffset:lerp(self.viewmodel.Offsets.Sprint.Value, self.lerpValues.sprint.Value)
+		local finalOffset = sprintOffset
 
 		-- Allows us to reduce the players walkspeed by changing the walkspeed lerp value while we are aiming
+		local backwardsReduction = if not self.aiming and forwardBackDir < 0 then 4 else 0
 		if not self.isSprinting then
 			local aimWalkspeed = self.settings.aimWalkspeed or 6
-			self.char.Humanoid.WalkSpeed = 16 - ((16 - aimWalkspeed) * self.lerpValues.walkspeed.Value)
+			-- Reduce walkspeed if we are walking backwards
+			self.char.Humanoid.WalkSpeed = 16 - ((16 - aimWalkspeed) * self.lerpValues.walkspeed.Value) - backwardsReduction
+		else
+			self.char.Humanoid.WalkSpeed = (self.settings.sprintSpeed or 25) - backwardsReduction
 		end
 		
 		-- Get the amount the mouse has moved and apply this to the sway spring, so we can sway the viewmodel based on camera movement
@@ -290,34 +354,47 @@ function Weapon:update(dt)
 		self.springs.sway:shove(Vector3.new(mouseDelta.X / 300, mouseDelta.Y / 300, 0))
 		
 		local frequency = 1
-		local amplitude = 0.05
+		local amplitude = 0.1
+		local sprintAddition = self.isSprinting and 1.4 or 1
 		local movementSway = Vector3.new(
-			Maths.getSine(amplitude, frequency * 10), 
-			Maths.getSine(amplitude, frequency * 3), 
-			Maths.getSine(amplitude, frequency * 3)
+			Maths.getSine(amplitude, frequency * 7 * sprintAddition), 
+			Maths.getSine(amplitude, frequency * 14 * sprintAddition), 
+			0
 		)
+
+		-- Custom camera movement (don't want it to move as much as the viewmodel) which is relative to players velocity
+		local camSway = Vector3.new(
+			Maths.getSine(amplitude * 0.01 * sprintAddition, frequency * 14 * sprintAddition), 
+			0, 
+			0
+		) * velocity.Magnitude * 0.05
 	
 		-- Apply the movement sway to the walking spring, so that the viewmodel bobs when the player is walking
 		self.springs.walkCycle:shove((movementSway / 25) * dt * 60 * velocity.Magnitude)
 		
 		-- Update the springs
+		local movementTilt = self.springs.movementTilt:update(dt)
 		local sway = self.springs.sway:update(dt)
 		local walkCycle = self.springs.walkCycle:update(dt)
 		local recoil = self.springs.recoil:update(dt)
 
 		-- Make the camera shake when we shoot
-		self.camera.CFrame = self.camera.CFrame * CFrame.Angles(recoil.X, recoil.Y, recoil.Z)
+		self.camera.CFrame *= CFrame.Angles(recoil.X, recoil.Y, recoil.Z)
+		self.camera.CFrame *= CFrame.Angles(camSway.X, camSway.Y, camSway.Z)
 
 		-- Less recoil when we're aiming
 		self.recoilFactor = if self.aiming then self.settings.weaponStats.aimRecoilFactor else 1
 
 		-- Apply all of these movements to the viewmodels CFrame
 		self.viewmodel.RootPart.CFrame = self.camera.CFrame:ToWorldSpace(finalOffset) * CFrame.Angles(0, math.pi, 0)
-		self.viewmodel.RootPart.CFrame = self.viewmodel.RootPart.CFrame:ToWorldSpace(CFrame.new(walkCycle.X / 2, walkCycle.Y / 2,0))
+		self.viewmodel.RootPart.CFrame = self.viewmodel.RootPart.CFrame:ToWorldSpace(CFrame.new(walkCycle.X / 4, walkCycle.Y / 2, 0))
+		self.viewmodel.RootPart.CFrame *= CFrame.Angles(movementTilt.X, 0, movementTilt.Z)
 		self.viewmodel.RootPart.CFrame *= CFrame.Angles(-sway.Y, -sway.X, 0)
 		self.viewmodel.RootPart.CFrame *= CFrame.Angles(recoil.X * self.recoilFactor, recoil.Y * self.recoilFactor, 0)
-		self.viewmodel.RootPart.CFrame *= CFrame.Angles(0, walkCycle.Y, walkCycle.X)
+		self.viewmodel.RootPart.CFrame *= CFrame.Angles(walkCycle.Y / 3, walkCycle.X / 3, 0)
 	end
 end
+
+--0.699999988, -1.20000005, -1.10000002, -0.969846249, -0.171010062, -0.173648179, -0.141314477, 0.975082397, -0.171010062, 0.198565722, -0.141314477, -0.969846249
 
 return Weapon

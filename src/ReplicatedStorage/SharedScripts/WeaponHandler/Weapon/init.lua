@@ -164,10 +164,9 @@ function Weapon:fire(bool)
 		local bullet = ReplicatedStorage.Assets.Other.Bullet:Clone()
 		bullet.Size = Vector3.new(0.05, 0.05, self.weaponStats.velocity / 200)
 		bullet.CFrame = CFrame.new(origin + bulletDirection * bullet.Size.Z, origin + bulletDirection * bullet.Size.Z * 2)
-		bullet.Parent = workspace
-		bullet.AssemblyLinearVelocity = bulletDirection * self.weaponStats.velocity
+		bullet.Parent = workspace.Bullets
 		-- Fire a raycast bullet to calculate actual hits
-		self.hitDetector:fire(origin, bulletDirection * self.weaponStats.velocity, gravity, self.weaponStats.range, "Blacklist", {self.viewmodel, self.char})
+		self.hitDetector:fire(origin, bulletDirection * self.weaponStats.velocity, gravity, self.weaponStats.range, "Blacklist", {self.viewmodel, self.char}, bullet)
 
 		-- Shove the recoil spring to make the camera shake when we shoot, using the values from this guns settings to change the amount of recoil
 		local verticalRecoil = rand:NextNumber(0.15, 0.2) * self.recoilFactor * (self.weaponStats.verticalRecoilFactor or 1)
@@ -220,6 +219,7 @@ function Weapon:reload()
 	if self.ammo == self.weaponStats.magCapacity or self.spareBullets <= 0 then return end
 	self.reloading = true
 	-- Run animation
+	self.viewmodel.Receiver.ReloadSound:Play()
 	task.wait(3)
 	local neededBullets = self.weaponStats.magCapacity - self.ammo
 	local givenBullets = neededBullets

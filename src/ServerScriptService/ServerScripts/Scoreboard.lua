@@ -36,7 +36,6 @@ end
 for _, player in pairs(Players:GetPlayers()) do
 	Scoreboard.playerAdded(player)
 end
-
 Players.PlayerAdded:Connect(Scoreboard.playerAdded)
 Players.PlayerRemoving:Connect(Scoreboard.playerRemoving)
 

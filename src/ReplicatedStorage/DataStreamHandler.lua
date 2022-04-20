@@ -60,7 +60,7 @@ function DataStreams:getDataStream(streamName, streamType)
 	if RunService:IsServer() then
 		return getStream(RemotesFolder)
 	elseif RunService:IsClient() then
-		if RemotesFolder:WaitForChild(streamName, 5) then
+		if RemotesFolder:WaitForChild(streamName, 10) then
 			return RemotesFolder:FindFirstChild(streamName)
 		end
 

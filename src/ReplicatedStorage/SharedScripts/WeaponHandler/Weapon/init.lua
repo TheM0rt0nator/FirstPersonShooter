@@ -10,9 +10,14 @@ local Maths = loadModule("Maths")
 local Spring = loadModule("Spring")
 local UserInput = loadModule("UserInput")
 local Keybinds = loadModule("Keybinds")
-local HitDetector = loadModule("HitDetector")
+local BulletRender = loadModule("BulletRender")
 
 local hitPlayerEvent = getDataStream("HitPlayerEvent", "BindableEvent")
+local fireWeaponEvent = getDataStream("FireWeapon", "RemoteEvent")
+local aimWeaponEvent = getDataStream("AimWeapon", "RemoteEvent")
+local playerHitEvent = getDataStream("PlayerHit", "RemoteEvent")
+local equipWeaponFunc = getDataStream("EquipWeapon", "RemoteFunction")
+local reloadWeaponFunc = getDataStream("ReloadWeapon", "RemoteFunction")
 
 local rand = Random.new()
 local gravity = Vector3.new(0, workspace.Gravity, 0)
@@ -26,7 +31,7 @@ function Weapon.new(name)
 		name = name;
 		canFire = true;
 		loadedAnimations = {};
-		hitDetector = HitDetector.new();
+		hitDetector = BulletRender.new();
 		springs = {
 			movementTilt = Spring.new();
 			walkCycle = Spring.new();
@@ -39,15 +44,17 @@ function Weapon.new(name)
 			sprint = Instance.new("NumberValue");
 			-- This is so that the sprint offset doesn't apply when we are stationary or going backwards
 			idleOverride = Instance.new("NumberValue");
+			equip = Instance.new("NumberValue");
 		};
 	}
 
 	-- Connect a listener to the hit event so we can do damage etc
 	self.hitConnection = self.hitDetector.hitEvent.Event:Connect(function(part)
+		-- Could add a particle effect here to add blood splatters etc
 		if part.Parent and part.Parent:FindFirstChild("Humanoid") and part.Parent.Humanoid.Health > 0 then
-			part.Parent.Humanoid:TakeDamage(5)
 			-- Fire a bindable to tell the UI to show hitmarkers
 			hitPlayerEvent:Fire(part)
+			playerHitEvent:FireServer(self.name, 1, part)
 		end
 	end)
 	setmetatable(self, Weapon)
@@ -56,27 +63,41 @@ function Weapon.new(name)
 end
 
 -- Equip the weapon
-function Weapon:equip()
+function Weapon:equip(bool)
 	if self.disabled then return end
+	if not bool then self:unequip() return end
 
-	-- Get a clone of the weapon, or cancel the function if the weapon doesn't exist
-	local weapon = ReplicatedStorage.Assets.Weapons:FindFirstChild(self.name)
-	if not weapon then return end
-	weapon = weapon:Clone()
+	-- Disable mouse icon so we can add a custom one
+	UserInputService.MouseIconEnabled = false
 
-	-- Get a viewmodel and put the weapons contents inside it
-	self.viewmodel = ReplicatedStorage.Assets.Other.ViewModel:Clone()
-	for _, instance in pairs(weapon:GetChildren()) do
-		instance.Parent = self.viewmodel
-		if instance:IsA("BasePart") then
-			instance.CanCollide = false
-			instance.CastShadow = false
-		end
-	end	
+	-- Ask server if we can equip, and get the server to equip on server side
+	task.spawn(function()
+		local success = equipWeaponFunc:InvokeServer(self.name, bool)
+		if not success then self.equipped = false end
+	end)
+	
+	if not self.viewmodel then
+		-- Get a clone of the weapon, or cancel the function if the weapon doesn't exist
+		local weapon = ReplicatedStorage.Assets.Weapons:FindFirstChild(self.name)
+		if not weapon then return end
+		weapon = weapon:Clone()
+
+		-- Get a viewmodel and put the weapons contents inside it
+		self.viewmodel = ReplicatedStorage.Assets.Other.ViewModel:Clone()
+		for _, instance in pairs(weapon:GetChildren()) do
+			instance.Parent = self.viewmodel
+			if instance:IsA("BasePart") then
+				instance.CanCollide = false
+				instance.CastShadow = false
+			end
+		end	
+	end
 
 	self.camera = workspace.CurrentCamera
 	self.char = Players.LocalPlayer.Character
 	
+	self.lerpValues.equip.Value = 1
+
 	-- Bound the gun to the viewmodels root part
 	self.viewmodel.RootPart.weapon.Part1 = self.viewmodel.WeaponRootPart
 	self.viewmodel.Left.leftHand.Part0 = self.viewmodel.WeaponRootPart
@@ -95,6 +116,10 @@ function Weapon:equip()
 	self:loadAnimations()
 	self.loadedAnimations.idle:Play(0) --no lerp time from default pos to prevent stupid looking arms for no longer than 0 frames	
 
+	-- Make it appear like we are taking the weapon out rather than it just appearing
+	local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+	TweenService:Create(self.lerpValues.equip, tweenInfo, {Value = 0}):Play()
+
 	-- Connect inputs
 	self:connectInput()
 	
@@ -104,12 +129,24 @@ end
 
 -- Unequip the weapon
 function Weapon:unequip()
+	self.equipped = false
 	-- Disconnect inputs
 	self:disconnectInput()
+	-- Ask server if we can unequip, and get the server to unequip on server side
+	task.spawn(function()
+		equipWeaponFunc:InvokeServer(self.name, false)
+	end)
 	-- Destroy the viewmodel, which also destroys the gun, and set equipped to false
-	self.viewmodel:Destroy()
-    self.viewmodel = nil
-	self.equipped = false
+	local tweenInfo = TweenInfo.new(0.6, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+	TweenService:Create(self.lerpValues.equip, tweenInfo, {Value = 1}):Play()
+	task.wait(0.6)
+	if self.equipped then return end
+	-- Re enable the mouse icon
+	UserInputService.MouseIconEnabled = true
+	if self.viewmodel then
+		self.viewmodel:Destroy()
+		self.viewmodel = nil
+	end
 end
 
 -- Activate / deactivate firing the weapon
@@ -161,20 +198,24 @@ function Weapon:fire(bool)
 		local origin = self.viewmodel.Barrel.Position
 		local bulletDirection = (self.viewmodel.Muzzle.Position - origin).Unit
 
+		local initialVelocity = bulletDirection * self.weaponStats.velocity
+		-- Tell the server we have fired a bullet
+		fireWeaponEvent:FireServer(self.name, origin, initialVelocity)
+
 		local bullet = ReplicatedStorage.Assets.Other.Bullet:Clone()
 		bullet.Size = Vector3.new(0.05, 0.05, self.weaponStats.velocity / 200)
 		bullet.CFrame = CFrame.new(origin + bulletDirection * bullet.Size.Z, origin + bulletDirection * bullet.Size.Z * 2)
 		bullet.Parent = workspace.Bullets
 		-- Fire a raycast bullet to calculate actual hits
-		self.hitDetector:fire(origin, bulletDirection * self.weaponStats.velocity, gravity, self.weaponStats.range, "Blacklist", {self.viewmodel, self.char}, bullet)
+		self.hitDetector:fire(origin, initialVelocity, gravity, self.weaponStats.range, "Blacklist", {self.viewmodel, self.char}, bullet)
 
 		-- Shove the recoil spring to make the camera shake when we shoot, using the values from this guns settings to change the amount of recoil
 		local verticalRecoil = rand:NextNumber(0.15, 0.2) * self.recoilFactor * (self.weaponStats.verticalRecoilFactor or 1)
 		local horizontalRecoil = rand:NextNumber(-0.05, 0.05) * self.recoilFactor * (self.weaponStats.horizontalRecoilFactor or 1)
-		self.springs.recoil:shove(Vector3.new(verticalRecoil, horizontalRecoil, 0))
+		self.springs.recoil:shove(Vector3.new(verticalRecoil, horizontalRecoil, self.weaponStats.backwardsRecoil or 1))
 		task.spawn(function()
 			task.wait(.15)
-			self.springs.recoil:shove(Vector3.new(-verticalRecoil, -horizontalRecoil, 0))
+			self.springs.recoil:shove(Vector3.new(-verticalRecoil, -horizontalRecoil, -(self.weaponStats.backwardsRecoil or 1)))
 		end)
 		
 		task.wait(60 / self.weaponStats.rpm)
@@ -190,26 +231,25 @@ end
 
 -- Changes the aim lerp value to tell the viewport where to go
 function Weapon:aim(bool)
-	if self.disabled or not self.equipped then return end
-	if not self.equipped then return end
+	if self.disabled or not self.equipped or self.reloading then return end
 	self.aiming = bool
-	UserInputService.MouseIconEnabled = not bool
+	aimWeaponEvent:FireServer(self.name, bool)
 	
 	if bool then
 		if self.isSprinting then
 			self:sprint(false, true)
 		end
-		local tweeningInformation = TweenInfo.new(.7, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+		local tweenInfo = TweenInfo.new(.7, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		local properties = {Value = 1}
 		self.loadedAnimations.aim:Play()
-		TweenService:Create(self.lerpValues.aim, tweeningInformation, properties):Play()
-		TweenService:Create(self.lerpValues.walkspeed, tweeningInformation, properties):Play()
+		TweenService:Create(self.lerpValues.aim, tweenInfo, properties):Play()
+		TweenService:Create(self.lerpValues.walkspeed, tweenInfo, properties):Play()
 	else
-		local tweeningInformation = TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+		local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		local properties = {Value = 0}
 		self.loadedAnimations.aim:Stop()
-		TweenService:Create(self.lerpValues.aim, tweeningInformation, properties):Play()		
-		TweenService:Create(self.lerpValues.walkspeed, tweeningInformation, properties):Play()	
+		TweenService:Create(self.lerpValues.aim, tweenInfo, properties):Play()		
+		TweenService:Create(self.lerpValues.walkspeed, tweenInfo, properties):Play()	
 	end
 end
 
@@ -217,10 +257,27 @@ end
 function Weapon:reload()
 	if self.reloading then return end
 	if self.ammo == self.weaponStats.magCapacity or self.spareBullets <= 0 then return end
+	if not self.equipped then return end
+	-- Cancel shooting
+	if self.firing then
+		self:fire(false)
+	end
+	if self.aiming then
+		self:aim(false)
+	end
 	self.reloading = true
+	task.spawn(function()
+		local success = reloadWeaponFunc:InvokeServer(self.name, self.ammo, self.spareBullets)
+		-- If server says we can't reload, is an exploiter so set ammo to 0
+		if not success then 
+			self.ammo = 0 
+			self.spareBullets = 0 
+		end
+	end)
 	-- Run animation
 	self.viewmodel.Receiver.ReloadSound:Play()
-	task.wait(3)
+	self.loadedAnimations.reload:Play()
+	task.wait(self.loadedAnimations.reload.Length)
 	local neededBullets = self.weaponStats.magCapacity - self.ammo
 	local givenBullets = neededBullets
 	if neededBullets > self.spareBullets then
@@ -241,10 +298,11 @@ function Weapon:sprint(bool, changeIsSprinting)
 		self.isSprinting = bool
 	end
 	self.char.Humanoid.WalkSpeed = if bool then (self.settings.sprintSpeed or 25) else 16
+	if not self.equipped then return end
 	local tweenTo = bool and 1 or 0
-	local tweeningInformation = TweenInfo.new(.7, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+	local tweenInfo = TweenInfo.new(.7, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 	local properties = {Value = tweenTo}
-	TweenService:Create(self.lerpValues.sprint, tweeningInformation, properties):Play()
+	TweenService:Create(self.lerpValues.sprint, tweenInfo, properties):Play()
 	self.sprintStance = bool
 	if not bool then return end
 	self:aim(false)
@@ -259,6 +317,7 @@ function Weapon:connectInput()
 		local keyCode = keybind.EnumType == Enum.KeyCode and keybind
 		UserInput.connectInput(inputType, keyCode, "FireWeapon" .. bindNum, {
 			beganFunc = function()
+				print("Firing")
 				self:fire(true)
 			end;
 			endedFunc = function()
@@ -341,8 +400,10 @@ end
 
 -- Loads the animations and stores them in the object
 function Weapon:loadAnimations()
-	self.loadedAnimations.idle = self.viewmodel.AnimationController:LoadAnimation(self.settings.animations.viewmodel.idle)
-	self.loadedAnimations.aim = self.viewmodel.AnimationController:LoadAnimation(self.settings.animations.viewmodel.aim)
+	-- Could add a jump animation too for more immersion, I won't for now because of time
+	self.loadedAnimations.idle = self.viewmodel.AnimationController:LoadAnimation(self.viewmodel.Animations.Idle)
+	self.loadedAnimations.aim = self.viewmodel.AnimationController:LoadAnimation(self.viewmodel.Animations.Aim)
+	self.loadedAnimations.reload = self.viewmodel.AnimationController:LoadAnimation(self.viewmodel.Animations.Reload)
 end
 
 -- Update the weapons position based on the camera
@@ -372,7 +433,9 @@ function Weapon:update(dt)
 		local aimOffset = idleOffset:lerp(self.viewmodel.Offsets.Aim.Value, self.lerpValues.aim.Value)
 		-- Only want the sprint offset to apply if we are actually sprinting
 		local sprintOffset = aimOffset:lerp(self.viewmodel.Offsets.Sprint.Value, self.lerpValues.sprint.Value)
-		local finalOffset = sprintOffset
+		-- Apply the equipping offset
+		local equipOffset = sprintOffset:lerp(self.viewmodel.Offsets.Equip.Value, self.lerpValues.equip.Value)
+		local finalOffset = equipOffset
 
 		-- Allows us to reduce the players walkspeed by changing the walkspeed lerp value while we are aiming
 		local backwardsReduction = if not self.aiming and forwardBackDir < 0 then 4 else 0
@@ -415,7 +478,7 @@ function Weapon:update(dt)
 		local recoil = self.springs.recoil:update(dt)
 
 		-- Make the camera shake when we shoot
-		self.camera.CFrame *= CFrame.Angles(recoil.X, recoil.Y, recoil.Z)
+		self.camera.CFrame *= CFrame.Angles(recoil.X, recoil.Y, 0)
 		self.camera.CFrame *= CFrame.Angles(camSway.X, camSway.Y, camSway.Z)
 
 		-- Less recoil when we're aiming
@@ -427,6 +490,8 @@ function Weapon:update(dt)
 		self.viewmodel.RootPart.CFrame *= CFrame.Angles(movementTilt.X, 0, movementTilt.Z)
 		self.viewmodel.RootPart.CFrame *= CFrame.Angles(-sway.Y, -sway.X, 0)
 		self.viewmodel.RootPart.CFrame *= CFrame.Angles(recoil.X * self.recoilFactor, recoil.Y * self.recoilFactor, 0)
+		-- Some backwards recoil!
+		self.viewmodel.RootPart.CFrame *= CFrame.new(0, 0, recoil.Z * self.recoilFactor)
 		self.viewmodel.RootPart.CFrame *= CFrame.Angles(walkCycle.Y / 3, walkCycle.X / 3, 0)
 	end
 end

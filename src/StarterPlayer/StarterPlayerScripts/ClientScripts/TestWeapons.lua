@@ -13,7 +13,12 @@ local TestWeapons = {}
 
 task.delay(5, function()
 	local newWeapon = Weapon.new("M4A1")
-	newWeapon:equip()
+
+	UserInput.connectInput(Enum.UserInputType.Keyboard, Enum.KeyCode.One, "EquipWeapon", {
+		endedFunc = function()
+			newWeapon:equip(not newWeapon.equipped)
+		end;
+	}, true)
 
 	local function update(dt)
 		newWeapon:update(dt)

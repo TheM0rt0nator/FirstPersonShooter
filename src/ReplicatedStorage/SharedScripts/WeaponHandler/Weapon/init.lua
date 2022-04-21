@@ -13,12 +13,15 @@ local UserInput = loadModule("UserInput")
 local Keybinds = loadModule("Keybinds")
 local BulletRender = loadModule("BulletRender")
 
-local hitPlayerEvent = getDataStream("HitPlayerEvent", "BindableEvent")
 local fireWeaponEvent = getDataStream("FireWeapon", "RemoteEvent")
 local aimWeaponEvent = getDataStream("AimWeapon", "RemoteEvent")
 local playerHitEvent = getDataStream("PlayerHit", "RemoteEvent")
 local equipWeaponFunc = getDataStream("EquipWeapon", "RemoteFunction")
 local reloadWeaponFunc = getDataStream("ReloadWeapon", "RemoteFunction")
+
+local ammoChanged = getDataStream("AmmoChanged", "BindableEvent")
+local weaponChanged = getDataStream("WeaponChanged", "BindableEvent")
+local hitPlayerEvent = getDataStream("HitPlayerEvent", "BindableEvent")
 
 local rand = Random.new()
 local gravity = Vector3.new(0, workspace.Gravity, 0)
@@ -125,6 +128,14 @@ function Weapon:equip(bool)
 	local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 	TweenService:Create(self.lerpValues.equip, tweenInfo, {Value = 0}):Play()
 
+	if self.viewmodel.Receiver:FindFirstChild("EquipSound") then
+		self.viewmodel.Receiver.EquipSound:Play()
+	end
+
+	-- Fire these bindables to change the HUD
+	ammoChanged:Fire(self.ammo, self.spareBullets)
+	weaponChanged:Fire(self.name)
+
 	-- Connect inputs
 	self:connectInput()
 	
@@ -206,7 +217,7 @@ function Weapon:fire(bool)
 
 		-- Take one round out of the ammo every time we fire
 		self.ammo -= 1
-		print(self.ammo)
+		ammoChanged:Fire(self.ammo, self.spareBullets)
 
 		-- Render a real bullet for visuals
 		local origin = self.viewmodel.Barrel.Position
@@ -307,8 +318,8 @@ function Weapon:reload()
 	self.spareBullets -= givenBullets
 	self.spareBullets = math.clamp(self.spareBullets, 0, self.weaponStats.spareBullets)
 	self.ammo += givenBullets
+	ammoChanged:Fire(self.ammo, self.spareBullets)
 	self.canFire = true
-	print(self.ammo, self.spareBullets)
 	self.reloading = false
 end
 

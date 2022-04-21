@@ -60,7 +60,9 @@ end
 
 function HitMarkers:render()
 	return Roact.createElement("ScreenGui", {
-		Enabled = self.visible;
+		Enabled = Roact.joinBindings({self.props.visible, self.visible}):map(function(values)
+			return values[1] and values[2]
+		end);
 	}, {
 		HitMarker = Roact.createElement("ImageLabel", {
 			AnchorPoint = Vector2.new(0.5, 0.5);

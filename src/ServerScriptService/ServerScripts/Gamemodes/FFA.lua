@@ -5,7 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
-local Scoreboard = loadModule("Scoreboard")
+local Leaderboard = loadModule("Leaderboard")
 
 local gameOverEvent = getDataStream("GameOverEvent", "BindableEvent")
 
@@ -18,7 +18,7 @@ local FFA = {
 -- When a player dies, increment their deaths, check who killed them and increment this players kills
 function FFA:playerKilled(player)
 	-- Get the round type, and only ask for round end conditions if the game type is kills (or could add score-based rounds too)
-	Scoreboard:incrementScore(player, "Deaths", 1)
+	Leaderboard:incrementScore(player, "Deaths", 1)
 	if not player:FindFirstChild("ShotTags") then return end
 	
 	-- Collect all the players with the highest damage dealt to the killed player, and add one kill to all of their scores (2 or more players could have dealt the same damage to 1 player)
@@ -38,11 +38,11 @@ function FFA:playerKilled(player)
 	local gameOver
 	for _, killer in pairs(killers) do
 		if Players:GetPlayerByUserId(tonumber(killer)) then
-			Scoreboard:incrementScore(Players:GetPlayerByUserId(tonumber(killer)), "Kills", 1)
+			Leaderboard:incrementScore(Players:GetPlayerByUserId(tonumber(killer)), "Kills", 1)
 		end
 		if gameOver then continue end
 		gameOver = self:checkRoundEnded({
-			kills = (Scoreboard.playerScores[killer] and Scoreboard.playerScores[killer].Kills) or 0;
+			kills = (Leaderboard.playerScores[killer] and Leaderboard.playerScores[killer].Kills) or 0;
 		})
 	end
 	if gameOver then
@@ -67,14 +67,14 @@ function FFA:spawnPlayer(player)
 	end
 
 	task.spawn(function()
-		Scoreboard:incrementScore(player, "Kills", 1)
-		print(Scoreboard)
-		local scores = Scoreboard.playerScores[tostring(player.UserId)]
+		Leaderboard:incrementScore(player, "Kills", 1)
+		print(Leaderboard)
+		local scores = Leaderboard.playerScores[tostring(player.UserId)]
 		while scores and scores.Kills and scores.Kills < 25 do
-			Scoreboard:incrementScore(player, "Kills", 1)
-			print(Scoreboard.playerScores[tostring(player.UserId)].Kills)
+			Leaderboard:incrementScore(player, "Kills", 1)
+			print(Leaderboard.playerScores[tostring(player.UserId)].Kills)
 			local gameOver = self:checkRoundEnded({
-				kills = (Scoreboard.playerScores[tostring(player.UserId)] and Scoreboard.playerScores[tostring(player.UserId)].Kills) or 0;
+				kills = (Leaderboard.playerScores[tostring(player.UserId)] and Leaderboard.playerScores[tostring(player.UserId)].Kills) or 0;
 			}) 
 			if gameOver then
 				gameOverEvent:Fire()

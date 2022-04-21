@@ -10,6 +10,7 @@ local Leaderboard = loadModule("Leaderboard")
 local gameOverEvent = getDataStream("GameOverEvent", "BindableEvent")
 
 local FFA = {
+	name = "FFA";
 	killGoal = 25;
 	-- Added a roundType value incase a gamemode is time-based rather than kill-based
 	roundType = "Kills";
@@ -68,11 +69,9 @@ function FFA:spawnPlayer(player)
 
 	task.spawn(function()
 		Leaderboard:incrementScore(player, "Kills", 1)
-		print(Leaderboard)
 		local scores = Leaderboard.playerScores[tostring(player.UserId)]
 		while scores and scores.Kills and scores.Kills < 25 do
 			Leaderboard:incrementScore(player, "Kills", 1)
-			print(Leaderboard.playerScores[tostring(player.UserId)].Kills)
 			local gameOver = self:checkRoundEnded({
 				kills = (Leaderboard.playerScores[tostring(player.UserId)] and Leaderboard.playerScores[tostring(player.UserId)].Kills) or 0;
 			}) 

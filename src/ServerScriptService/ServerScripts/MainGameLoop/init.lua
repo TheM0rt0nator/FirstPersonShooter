@@ -5,8 +5,7 @@ local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framewo
 
 local MapHandler = loadModule("MapHandler")
 local Gamemodes = loadModule("Gamemodes")
-local Maths = loadModule("Maths")
-local Scoreboard = loadModule("Scoreboard")
+local Leaderboard = loadModule("Leaderboard")
 
 local spawnPlayerEvent = getDataStream("SpawnPlayerEvent", "RemoteEvent")
 local gameOverEvent = getDataStream("GameOverEvent", "BindableEvent")
@@ -49,7 +48,7 @@ function MainGameLoop:initiate()
 			self.gameStatus.Value = "GameOver"
 			self.currentMode = nil
 
-			Scoreboard:clearScores()
+			Leaderboard:clearScores()
 			-- Unload the map
 			local mapUnloaded, err = pcall(function()
 				MapHandler:unloadMap()

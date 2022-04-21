@@ -23,4 +23,14 @@ return {
 		Enum.KeyCode.G;
 		Enum.KeyCode.ButtonR1;
 	};
+	EquipPrimary = {
+		Enum.KeyCode.One;
+	};
+	EquipSecondary = {
+		Enum.KeyCode.Two;
+	};
+	SwitchWeapons = {
+		Enum.UserInputType.MouseWheel;
+		Enum.KeyCode.ButtonY;
+	};
 }

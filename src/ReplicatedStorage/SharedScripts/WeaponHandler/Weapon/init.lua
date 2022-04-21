@@ -21,6 +21,8 @@ local reloadWeaponFunc = getDataStream("ReloadWeapon", "RemoteFunction")
 
 local rand = Random.new()
 local gravity = Vector3.new(0, workspace.Gravity, 0)
+-- Made crouching global so you stay crouching even if you switch weapons
+local crouching = false
 
 local Weapon = {}
 Weapon.__index = Weapon
@@ -45,6 +47,7 @@ function Weapon.new(name)
 			-- This is so that the sprint offset doesn't apply when we are stationary or going backwards
 			idleOverride = Instance.new("NumberValue");
 			equip = Instance.new("NumberValue");
+			crouch = Instance.new("NumberValue");
 		};
 	}
 
@@ -97,6 +100,7 @@ function Weapon:equip(bool)
 	self.char = Players.LocalPlayer.Character
 	
 	self.lerpValues.equip.Value = 1
+	self.lerpValues.crouch.Value = crouching and 1 or 0
 
 	-- Bound the gun to the viewmodels root part
 	self.viewmodel.RootPart.weapon.Part1 = self.viewmodel.WeaponRootPart
@@ -143,6 +147,10 @@ function Weapon:unequip()
 	if self.equipped then return end
 	-- Re enable the mouse icon
 	UserInputService.MouseIconEnabled = true
+	-- Stop all animations
+	for _, anim in pairs(self.loadedAnimations) do
+		anim:Stop()
+	end
 	if self.viewmodel then
 		self.viewmodel:Destroy()
 		self.viewmodel = nil
@@ -167,6 +175,11 @@ function Weapon:fire(bool)
 	if not bool then return end
 	if self.isSprinting then
 		self:sprint(false, true)
+	end
+
+	-- Not implemented but could use OOP inheritance to add a customFire function for different weapons like rocket propelled or bow & arrow
+	if self.customFire then
+		self.customFire(bool)
 	end
 
 	local function fire()
@@ -291,11 +304,39 @@ function Weapon:reload()
 	self.reloading = false
 end
 
+-- Runs the crouch animation
+function Weapon:crouch(bool)
+	-- Stop sprinting
+	if bool and self.isSprinting then
+		self:sprint(false, true)
+	end
+	crouching = bool
+	if bool then
+		-- Play relevant crouching animations depending on if we are moving or not
+		if self.velocity.Magnitude > 1 then
+			self.loadedAnimations.crouchMoving:Play(nil, nil, 0.7)
+		else
+			self.loadedAnimations.crouchIdle:Play()
+		end
+	else
+		self.loadedAnimations.crouchIdle:Stop()
+		self.loadedAnimations.crouchMoving:Stop()
+	end
+	if not self.char:FindFirstChild("Humanoid") then return end
+	local tweenInfo = TweenInfo.new(.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+	local properties = {Value = bool and 1 or 0}
+	TweenService:Create(self.lerpValues.crouch, tweenInfo, properties):Play()
+end
+
 -- Enable / disable sprinting by chaning walkspeed and cancelling shooting and aiming
 function Weapon:sprint(bool, changeIsSprinting)
 	if not self.char or not self.char:FindFirstChild("Humanoid") then return end
 	if changeIsSprinting then
 		self.isSprinting = bool
+	end
+	-- Stop crouching
+	if bool and crouching then
+		self:crouch(false)
 	end
 	self.char.Humanoid.WalkSpeed = if bool then (self.settings.sprintSpeed or 25) else 16
 	if not self.equipped then return end
@@ -317,7 +358,6 @@ function Weapon:connectInput()
 		local keyCode = keybind.EnumType == Enum.KeyCode and keybind
 		UserInput.connectInput(inputType, keyCode, "FireWeapon" .. bindNum, {
 			beganFunc = function()
-				print("Firing")
 				self:fire(true)
 			end;
 			endedFunc = function()
@@ -371,10 +411,10 @@ function Weapon:connectInput()
 		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
 		UserInput.connectInput(inputType, keybind, "Crouch" .. bindNum, {
 			beganFunc = function()
-				print("Start crouching")
+				self:crouch(true)
 			end;
 			endedFunc = function()
-				print("Finish crouching")
+				self:crouch(false)
 			end;
 		}, true)
 	end
@@ -390,11 +430,42 @@ function Weapon:connectInput()
 	end
 end
 
--- Disconnects the connect inputs when the weapon is equipped
+-- Disconnects the connected inputs when the weapon is unequipped
 function Weapon:disconnectInput()
+	-- Disconnect firing inputs
+	for _, keybind in ipairs(Keybinds.Fire) do
+		local inputType = (keybind.EnumType == Enum.UserInputType and keybind) or Enum.UserInputType.Keyboard
+		UserInput.disconnectInput(inputType, "FireWeapon")
+	end
+
+	-- Disconnect aiming inputs
 	for _, keybind in pairs(Keybinds.Aim) do
 		local inputType = (keybind.EnumType == "UserInputType" and keybind) or Enum.UserInputType.Keyboard
 		UserInput.disconnectInput(inputType, "AimWeapon")
+	end
+
+	-- Disconnect using equipment inputs
+	for _, keybind in pairs(Keybinds.UseEquipment) do
+		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
+		UserInput.disconnectInput(inputType, "UseEquipment")
+	end
+
+	-- Disconnect the sprint inputs
+	for _, keybind in pairs(Keybinds.Sprint) do
+		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
+		UserInput.disconnectInput(inputType, "Sprint")
+	end
+
+	-- Disconnect the crouch inputs
+	for bindNum, keybind in pairs(Keybinds.Crouch) do
+		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
+		UserInput.disconnectInput(inputType, "Crouch" .. bindNum)
+	end
+
+	-- Disconnect the reload inputs 
+	for bindNum, keybind in pairs(Keybinds.Reload) do
+		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
+		UserInput.disconnectInput(inputType, "ReloadWeapon" .. bindNum)
 	end
 end
 
@@ -404,13 +475,16 @@ function Weapon:loadAnimations()
 	self.loadedAnimations.idle = self.viewmodel.AnimationController:LoadAnimation(self.viewmodel.Animations.Idle)
 	self.loadedAnimations.aim = self.viewmodel.AnimationController:LoadAnimation(self.viewmodel.Animations.Aim)
 	self.loadedAnimations.reload = self.viewmodel.AnimationController:LoadAnimation(self.viewmodel.Animations.Reload)
+	if not self.char or not self.char:FindFirstChild("Humanoid") then return end
+	self.loadedAnimations.crouchIdle = self.char.Humanoid.Animator:LoadAnimation(Players.LocalPlayer.Backpack.Animations.CrouchIdle)
+	self.loadedAnimations.crouchMoving = self.char.Humanoid.Animator:LoadAnimation(Players.LocalPlayer.Backpack.Animations.CrouchMoving)
 end
 
 -- Update the weapons position based on the camera
 function Weapon:update(dt)
 	if self.viewmodel then
 		-- Get the players velocity
-		local velocity = self.char.HumanoidRootPart.AssemblyLinearVelocity
+		self.velocity = self.char.HumanoidRootPart.AssemblyLinearVelocity
 
 		-- Get the players movement direction relative to the camera so we can tilt the viewmodel
 		local forwardBackDir = self.char.Humanoid.MoveDirection:Dot(self.camera.CFrame.LookVector)
@@ -422,10 +496,19 @@ function Weapon:update(dt)
 		end
 
 		-- Cancel out the sprint stance if we are not moving or are moving backwards
-		if self.isSprinting and (math.abs(velocity.Magnitude) < 1 or (math.abs(forwardBackDir) > 0.1 and forwardBackDir < 0.1)) and self.sprintStance then
+		if self.isSprinting and (math.abs(self.velocity.Magnitude) < 1 or (math.abs(forwardBackDir) > 0.1 and forwardBackDir < 0.1)) and self.sprintStance then
 			self:sprint(false)
-		elseif self.isSprinting and (math.abs(velocity.Magnitude) > 1 and math.abs(forwardBackDir) > 0.1 and forwardBackDir > 0.1) and not self.sprintStance then
+		elseif self.isSprinting and (math.abs(self.velocity.Magnitude) > 1 and math.abs(forwardBackDir) > 0.1 and forwardBackDir > 0.1) and not self.sprintStance then
 			self:sprint(true)
+		end
+
+		-- Change crouch animation when we stop/start moving
+		if crouching and self.velocity.Magnitude > 1 and self.loadedAnimations.crouchIdle.IsPlaying then
+			self.loadedAnimations.crouchIdle:Stop()
+			self.loadedAnimations.crouchMoving:Play(nil, nil, 0.7)
+		elseif crouching and self.velocity.Magnitude < 1 and self.loadedAnimations.crouchMoving.IsPlaying then
+			self.loadedAnimations.crouchMoving:Stop()
+			self.loadedAnimations.crouchIdle:Play()
 		end
 
 		-- Add the aim offset to the final offset
@@ -466,10 +549,10 @@ function Weapon:update(dt)
 			Maths.getSine(amplitude * 0.01 * sprintAddition, frequency * 14 * sprintAddition), 
 			0, 
 			0
-		) * velocity.Magnitude * 0.05
+		) * self.velocity.Magnitude * 0.05
 	
 		-- Apply the movement sway to the walking spring, so that the viewmodel bobs when the player is walking
-		self.springs.walkCycle:shove((movementSway / 25) * dt * 60 * velocity.Magnitude)
+		self.springs.walkCycle:shove((movementSway / 25) * dt * 60 * self.velocity.Magnitude)
 		
 		-- Update the springs
 		local movementTilt = self.springs.movementTilt:update(dt)
@@ -480,6 +563,10 @@ function Weapon:update(dt)
 		-- Make the camera shake when we shoot
 		self.camera.CFrame *= CFrame.Angles(recoil.X, recoil.Y, 0)
 		self.camera.CFrame *= CFrame.Angles(camSway.X, camSway.Y, camSway.Z)
+		-- Tween the cam down if we crouch
+		if self.char and self.char:FindFirstChild("Humanoid") then
+			self.char.Humanoid.CameraOffset = Vector3.new(0, self.lerpValues.crouch.Value * -1, 0)
+		end
 
 		-- Less recoil when we're aiming
 		self.recoilFactor = if self.aiming then self.weaponStats.aimRecoilFactor else 1

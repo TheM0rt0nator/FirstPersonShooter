@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local CollectionService = game:GetService("CollectionService")
 local UserInputService = game:GetService("UserInputService")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
@@ -219,8 +220,15 @@ function Weapon:fire(bool)
 		bullet.Size = Vector3.new(0.05, 0.05, self.weaponStats.velocity / 200)
 		bullet.CFrame = CFrame.new(origin + bulletDirection * bullet.Size.Z, origin + bulletDirection * bullet.Size.Z * 2)
 		bullet.Parent = workspace.Bullets
+
+		local filterInstances = {
+			self.viewmodel;
+			self.char; 
+			CollectionService:GetTagged("Accessory");
+			CollectionService:GetTagged("Weapon");
+		}
 		-- Fire a raycast bullet to calculate actual hits
-		self.hitDetector:fire(origin, initialVelocity, gravity, self.weaponStats.range, "Blacklist", {self.viewmodel, self.char}, bullet)
+		self.hitDetector:fire(origin, initialVelocity, gravity, self.weaponStats.range, "Blacklist", filterInstances, bullet)
 
 		-- Shove the recoil spring to make the camera shake when we shoot, using the values from this guns settings to change the amount of recoil
 		local verticalRecoil = rand:NextNumber(0.15, 0.2) * self.recoilFactor * (self.weaponStats.verticalRecoilFactor or 1)

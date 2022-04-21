@@ -2,9 +2,11 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local loadModule = table.unpack(require(ReplicatedStorage.Framework))
+local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
 local PlayerDataManager = loadModule("PlayerDataManager")
+
+local updateLeaderboardUI = getDataStream("UpdateLeaderboardUI", "RemoteEvent")
 
 local Leaderboard = {
 	playerScores = {};
@@ -33,17 +35,23 @@ function Leaderboard:incrementScore(player, scoreType, amount, save)
 	else
 		scores[scoreType] += amount
 	end
-	-- Increment the players data to keep track of kills, deaths, and any other scores
-	local currentData = PlayerDataManager:getSessionData(player)
-	PlayerDataManager:changeSessionData(player, {
-		[scoreType] = (currentData[scoreType] or 0) + amount;
-	})
+	Leaderboard.playerScores[tostring(player.UserId)].plrLeaderstats:FindFirstChild(scoreType).Value += amount
+
+	if save then
+		-- Increment the players data to keep track of kills, deaths, and any other scores
+		local currentData = PlayerDataManager:getSessionData(player)
+		PlayerDataManager:changeSessionData(player, {
+			[scoreType] = (currentData[scoreType] or 0) + amount;
+		})
+	end
 end
 
 -- Clears the scores from the scoreboard, ready for the next round
 function Leaderboard:clearScores()
 	for userId, _ in pairs(self.playerScores) do
-		self.playerScores[userId] = {}
+		self.playerScores[userId] = {
+			plrLeaderstats = self.playerScores[userId].plrLeaderstats
+		}
 	end
 	-- Clear out the players leaderstats table
 	for _, player in pairs(Players:GetPlayers()) do
@@ -53,6 +61,7 @@ function Leaderboard:clearScores()
 			end
 		end)
 	end
+	updateLeaderboardUI:FireAllClients()
 end
 
 -- Creates the leaderboard values for a player depending on the gamemode (might have deaths in one gamemode but not another)
@@ -61,8 +70,15 @@ function Leaderboard.createValues(playersFolder)
 	if gamemode == "FFA" then
 		local kills = Instance.new("IntValue", playersFolder)
 		kills.Name = "Kills"
+		local layoutOrder = Instance.new("IntValue", kills)
+		layoutOrder.Name = "LayoutOrderVal"
+		layoutOrder.Value = 1
+
 		local deaths = Instance.new("IntValue", playersFolder)
 		deaths.Name = "Deaths"
+		local layoutOrder1 = Instance.new("IntValue", deaths)
+		layoutOrder1.Name = "LayoutOrderVal"
+		layoutOrder1.Value = 2
 	end
 end
 
@@ -71,7 +87,10 @@ function Leaderboard.playerAdded(player)
 	Leaderboard.playerScores[tostring(player.UserId)] = {}
 	local playerLeaderstats = Instance.new("Folder", Leaderboard.leaderboardVals)
 	playerLeaderstats.Name = player.Name
+	-- Save this value in the players values for easy access
+	Leaderboard.playerScores[tostring(player.UserId)].plrLeaderstats = playerLeaderstats
 	Leaderboard.createValues(playerLeaderstats)
+	updateLeaderboardUI:FireAllClients()
 end
 
 -- When the player leaves, get rid of their score table
@@ -80,6 +99,7 @@ function Leaderboard.playerRemoving(player)
 	if Leaderboard.leaderboardVals:FindFirstChild(player.Name) then
 		Leaderboard.leaderboardVals:FindFirstChild(player.Name):Destroy()
 	end
+	updateLeaderboardUI:FireAllClients()
 end
 
 return Leaderboard

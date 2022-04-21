@@ -7,12 +7,6 @@ local UserInputService = game:GetService("UserInputService")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
-local Maths = loadModule("Maths")
-local Spring = loadModule("Spring")
-local UserInput = loadModule("UserInput")
-local Keybinds = loadModule("Keybinds")
-local BulletRender = loadModule("BulletRender")
-
 local fireWeaponEvent = getDataStream("FireWeapon", "RemoteEvent")
 local aimWeaponEvent = getDataStream("AimWeapon", "RemoteEvent")
 local playerHitEvent = getDataStream("PlayerHit", "RemoteEvent")
@@ -23,6 +17,13 @@ local ammoChanged = getDataStream("AmmoChanged", "BindableEvent")
 local weaponChanged = getDataStream("WeaponChanged", "BindableEvent")
 local hitPlayerEvent = getDataStream("HitPlayerEvent", "BindableEvent")
 
+local Maths = loadModule("Maths")
+local Spring = loadModule("Spring")
+local UserInput = loadModule("UserInput")
+local Keybinds = loadModule("Keybinds")
+local BulletRender = loadModule("BulletRender")
+
+local player = Players.LocalPlayer
 local rand = Random.new()
 local gravity = Vector3.new(0, workspace.Gravity, 0)
 -- Made crouching global so you stay crouching even if you switch weapons
@@ -54,6 +55,29 @@ function Weapon.new(name)
 			crouch = Instance.new("NumberValue");
 		};
 	}
+	
+	if not player.Character then
+		player.CharacterAdded:Wait()
+	end
+	self.char = player.Character
+	if self.char:WaitForChild("Humanoid", 3) then
+		self.diedConnection = self.char.Humanoid.Died:Connect(function()
+			self:destroy()
+		end)
+	end
+
+	-- Find our weapon
+	self.storedWeapon = ReplicatedStorage.Assets.Weapons:FindFirstChild(self.name)
+
+	if self.storedWeapon then
+		-- Save the settings table
+		self.settings = require(self.storedWeapon.Settings)
+		self.weaponStats = self.settings.weaponStats
+	
+		-- Setup the magazine and ammunition
+		self.ammo = self.weaponStats.magCapacity
+		self.spareBullets = self.weaponStats.spareBullets
+	end
 
 	-- Connect a listener to the hit event so we can do damage etc
 	self.hitConnection = self.hitDetector.hitEvent.Event:Connect(function(part)
@@ -85,13 +109,12 @@ function Weapon:equip(bool)
 	
 	if not self.viewmodel then
 		-- Get a clone of the weapon, or cancel the function if the weapon doesn't exist
-		local weapon = ReplicatedStorage.Assets.Weapons:FindFirstChild(self.name)
-		if not weapon then return end
-		weapon = weapon:Clone()
+		if not self.storedWeapon then return end
+		self.weapon = self.storedWeapon:Clone()
 
 		-- Get a viewmodel and put the weapons contents inside it
 		self.viewmodel = ReplicatedStorage.Assets.Other.ViewModel:Clone()
-		for _, instance in pairs(weapon:GetChildren()) do
+		for _, instance in pairs(self.weapon:GetChildren()) do
 			instance.Parent = self.viewmodel
 			if instance:IsA("BasePart") then
 				instance.CanCollide = false
@@ -100,8 +123,12 @@ function Weapon:equip(bool)
 		end	
 	end
 
+	-- Connect the update function when we equip
+	self.renderConnection = RunService.RenderStepped:Connect(function(dt)
+		self:update(dt)
+	end)
+
 	self.camera = workspace.CurrentCamera
-	self.char = Players.LocalPlayer.Character
 	
 	self.lerpValues.equip.Value = 1
 	self.lerpValues.crouch.Value = crouching and 1 or 0
@@ -111,14 +138,6 @@ function Weapon:equip(bool)
 	self.viewmodel.Left.leftHand.Part0 = self.viewmodel.WeaponRootPart
 	self.viewmodel.Right.rightHand.Part0 = self.viewmodel.WeaponRootPart
 	self.viewmodel.Parent = workspace.Camera
-	
-    -- Save the settings table
-	self.settings = require(self.viewmodel.Settings)
-	self.weaponStats = self.settings.weaponStats
-
-	-- Setup the magazine and ammunition
-	self.ammo = self.weaponStats.magCapacity
-	self.spareBullets = self.weaponStats.spareBullets
 
     -- Load animations from settings
 	self:loadAnimations()
@@ -145,6 +164,8 @@ end
 
 -- Unequip the weapon
 function Weapon:unequip()
+	self:aim(false)
+	self:fire(false)
 	self.equipped = false
 	-- Disconnect inputs
 	self:disconnectInput()
@@ -152,6 +173,9 @@ function Weapon:unequip()
 	task.spawn(function()
 		equipWeaponFunc:InvokeServer(self.name, false)
 	end)
+	if self.viewmodel.Receiver:FindFirstChild("UnequipSound") then
+		self.viewmodel.Receiver.UnequipSound:Play()
+	end
 	-- Destroy the viewmodel, which also destroys the gun, and set equipped to false
 	local tweenInfo = TweenInfo.new(0.6, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 	TweenService:Create(self.lerpValues.equip, tweenInfo, {Value = 1}):Play()
@@ -162,6 +186,10 @@ function Weapon:unequip()
 	-- Stop all animations
 	for _, anim in pairs(self.loadedAnimations) do
 		anim:Stop()
+	end
+	if self.renderConnection then
+		self.renderConnection:Disconnect()
+		self.renderConnection = nil
 	end
 	if self.viewmodel then
 		self.viewmodel:Destroy()
@@ -196,6 +224,9 @@ function Weapon:fire(bool)
 
 	local function fire()
 		if self.ammo <= 0 then 
+			if self.viewmodel.Receiver:FindFirstChild("NoAmmoSound") then
+				self.viewmodel.Receiver.NoAmmoSound:Play()
+			end
 			self.firing = false 
 			return 
 		end
@@ -287,8 +318,13 @@ end
 
 -- Runs the reloading animation and resets the guns ammo
 function Weapon:reload()
-	if self.reloading then return end
-	if self.ammo == self.weaponStats.magCapacity or self.spareBullets <= 0 then return end
+	if self.reloading or self.disabled then return end
+	if self.ammo == self.weaponStats.magCapacity or self.spareBullets <= 0 then 
+		if self.spareBullets <= 0 and self.viewmodel.Receiver:FindFirstChild("NoAmmoSound") then
+			self.viewmodel.Receiver.NoAmmoSound:Play()
+		end
+		return 
+	end
 	if not self.equipped then return end
 	-- Cancel shooting
 	if self.firing then
@@ -597,6 +633,29 @@ function Weapon:update(dt)
 		self.viewmodel.RootPart.CFrame *= CFrame.new(0, 0, recoil.Z * self.recoilFactor)
 		self.viewmodel.RootPart.CFrame *= CFrame.Angles(walkCycle.Y / 3, walkCycle.X / 3, 0)
 	end
+end
+
+-- Destroys the object by deleting the viewmodel, disconnecting connections and setting everything to nil
+function Weapon:destroy()
+	self.equipped = false
+	self.disabled = true
+	-- Disconnect inputs
+	self:disconnectInput()
+	-- Destroy the viewmodel, which also destroys the gun, and set equipped to false
+	UserInputService.MouseIconEnabled = true
+	-- Stop all animations
+	for _, anim in pairs(self.loadedAnimations) do
+		anim:Stop()
+	end
+	if self.renderConnection then
+		self.renderConnection:Disconnect()
+		self.renderConnection = nil
+	end
+	if self.viewmodel then
+		self.viewmodel:Destroy()
+		self.viewmodel = nil
+	end
+	self = nil
 end
 
 return Weapon

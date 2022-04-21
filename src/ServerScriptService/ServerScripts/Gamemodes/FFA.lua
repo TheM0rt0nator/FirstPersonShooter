@@ -16,36 +16,12 @@ local FFA = {
 	roundType = "Kills";
 }
 
--- When a player dies, increment their deaths, check who killed them and increment this players kills
-function FFA:playerKilled(player)
-	-- Get the round type, and only ask for round end conditions if the game type is kills (or could add score-based rounds too)
-	Leaderboard:incrementScore(player, "Deaths", 1)
-	if not player:FindFirstChild("ShotTags") then return end
-	
-	-- Collect all the players with the highest damage dealt to the killed player, and add one kill to all of their scores (2 or more players could have dealt the same damage to 1 player)
-	local highestDamage = 0
-	local killers = {}
-	for _, tag in pairs(player:FindFirstChild("ShotTags"):GetChildren()) do
-		if tag.Value > highestDamage then
-			killers = {}
-			highestDamage = tag.Value
-			table.insert(killers, tag.Name)
-		elseif tag.Value == highestDamage then
-			table.insert(killers, tag.Name)
-		end
-	end
-
-	-- Loops through the killers, add 1 kill to their scores and if any of them have enough kills, tell the game loop to end the round
-	local gameOver
-	for _, killer in pairs(killers) do
-		if Players:GetPlayerByUserId(tonumber(killer)) then
-			Leaderboard:incrementScore(Players:GetPlayerByUserId(tonumber(killer)), "Kills", 1)
-		end
-		if gameOver then continue end
-		gameOver = self:checkRoundEnded({
-			kills = (Leaderboard.playerScores[killer] and Leaderboard.playerScores[killer].Kills) or 0;
-		})
-	end
+-- When a player dies, increment their deaths, check who killed them and increment this players kills - could use the weapon variable to keep track of amount of kills with that weapon
+function FFA:playerKilled(killer, victim, weapon)
+	-- Check if the game is over
+	local gameOver = self:checkRoundEnded({
+		kills = (Leaderboard.playerScores[tostring(killer.UserId)] and Leaderboard.playerScores[tostring(killer.UserId)].Kills) or 0;
+	})
 	if gameOver then
 		gameOverEvent:Fire()
 	end
@@ -66,21 +42,6 @@ function FFA:spawnPlayer(player)
 			spawns[i] = nil
 		end
 	end
-
-	task.spawn(function()
-		Leaderboard:incrementScore(player, "Kills", 1)
-		local scores = Leaderboard.playerScores[tostring(player.UserId)]
-		while scores and scores.Kills and scores.Kills < 25 do
-			Leaderboard:incrementScore(player, "Kills", 1)
-			local gameOver = self:checkRoundEnded({
-				kills = (Leaderboard.playerScores[tostring(player.UserId)] and Leaderboard.playerScores[tostring(player.UserId)].Kills) or 0;
-			}) 
-			if gameOver then
-				gameOverEvent:Fire()
-			end
-			task.wait(1)
-		end
-	end)
 
 	-- Choose a spawn 
 	local chosenSpawn

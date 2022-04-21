@@ -12,12 +12,14 @@ local MainInterface = Roact.Component:extend("MainInterface")
 local Components = {
 	HitMarkers = loadModule("HitMarkers");
 	KitSelection = loadModule("KitSelection");
+	LeaderboardUI = loadModule("LeaderboardUI");
 }
 
 local InterfaceStates = {
 	kitSelection = {
 		"HitMarkers";
 		"KitSelection";
+		"LeaderboardUI";
 	};
 }
 

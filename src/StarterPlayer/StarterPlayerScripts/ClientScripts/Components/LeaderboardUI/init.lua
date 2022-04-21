@@ -2,14 +2,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
+local updateLeaderboardUI = getDataStream("UpdateLeaderboardUI", "RemoteEvent")
+local playerKilledRemote = getDataStream("PlayerKilled", "RemoteEvent")
+
 local Roact = loadModule("Roact")
 local Maid = loadModule("Maid")
 local UserInput = loadModule("UserInput")
 local UICorner = loadModule("UICorner")
 local LeaderboardTile = loadModule("LeaderboardTile")
-
-local updateLeaderboardUI = getDataStream("UpdateLeaderboardUI", "RemoteEvent")
-local playerKilledRemote = getDataStream("PlayerKilled", "RemoteEvent")
 
 local camera = workspace.CurrentCamera
 
@@ -69,6 +69,7 @@ function Leaderboard:render()
 		end
 		table.insert(tileProps, props)
 	end
+	if not titleSeparateStats then return end
 
 	local roundType = self.roundType.Value
 
@@ -100,6 +101,7 @@ function Leaderboard:render()
 
 	return Roact.createElement("ScreenGui", {
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
+		ResetOnSpawn = false;
 		-- Show if we are in the correct UI state and if the component is enabled
 		Enabled = Roact.joinBindings({self.props.visible, self.enabled}):map(function(values)
 			return values[1] and values[2]

@@ -6,5 +6,5 @@ local camera = workspace.CurrentCamera
 -- Disable built in leaderboard
 StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
 
---[[camera.CameraType = Enum.CameraType.Scriptable
-camera.CFrame = CFrame.new(0, 0, 0)]]
+camera.CameraType = Enum.CameraType.Scriptable
+camera.CFrame = CFrame.new(0, 0, 0)

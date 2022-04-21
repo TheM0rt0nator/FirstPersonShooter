@@ -2,10 +2,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
+local hitPlayerEvent = getDataStream("HitPlayerEvent", "BindableEvent")
+
 local Roact = loadModule("Roact")
 local Maid = loadModule("Maid")
-
-local hitPlayerEvent = getDataStream("HitPlayerEvent", "BindableEvent")
 
 local HitMarkers = Roact.Component:extend("HitMarkers")
 
@@ -60,6 +60,7 @@ end
 
 function HitMarkers:render()
 	return Roact.createElement("ScreenGui", {
+		ResetOnSpawn = false;
 		Enabled = Roact.joinBindings({self.props.visible, self.visible}):map(function(values)
 			return values[1] and values[2]
 		end);

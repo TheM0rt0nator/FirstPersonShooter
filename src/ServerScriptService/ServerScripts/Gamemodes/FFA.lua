@@ -5,9 +5,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
-local Leaderboard = loadModule("Leaderboard")
-
 local gameOverEvent = getDataStream("GameOverEvent", "BindableEvent")
+
+local Leaderboard = loadModule("Leaderboard")
 
 local FFA = {
 	name = "FFA";

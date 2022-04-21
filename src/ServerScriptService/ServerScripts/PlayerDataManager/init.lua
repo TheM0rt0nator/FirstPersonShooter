@@ -7,7 +7,6 @@ local loadModule = table.unpack(require(ReplicatedStorage.Framework))
 local DataStore = loadModule("DataStore")
 local DefaultData = loadModule("DefaultData")
 local Table = loadModule("Table")
-local WeaponHandler = loadModule("WeaponHandler")
 
 local PlayerDataStore = DataStoreService:GetDataStore("PlayerDataStore")
 
@@ -53,7 +52,6 @@ end
 
 -- When player joins, set their session data to their existing data or the default data table if they have no data
 function PlayerDataManager.playerAdded(player)
-	WeaponHandler.setEquippedKit(player, "Assault")
 	local userId = player.UserId
 	local playerDataIndex = "User_" .. userId
 	local playersData = DataStore.getData(PlayerDataStore, playerDataIndex, Table.clone(DefaultData))

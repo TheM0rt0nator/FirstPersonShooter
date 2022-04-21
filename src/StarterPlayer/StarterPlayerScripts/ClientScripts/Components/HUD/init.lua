@@ -7,13 +7,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
+local ammoChanged = getDataStream("AmmoChanged", "BindableEvent")
+local weaponChanged = getDataStream("WeaponChanged", "BindableEvent")
+
 local Roact = loadModule("Roact")
 local Maid = loadModule("Maid")
 local UICorner = loadModule("UICorner")
 local Flipper = loadModule("Flipper")
-
-local ammoChanged = getDataStream("AmmoChanged", "BindableEvent")
-local weaponChanged = getDataStream("WeaponChanged", "BindableEvent")
 
 local player = Players.LocalPlayer
 
@@ -27,10 +27,10 @@ function HUD:init()
 	self.health, self.setHealth = Roact.createBinding(self.healthMotor:getValue())
 	self.motorVelocity = .2
 	self.healthMotor:onStep(function(val)
-		print(val)
 		self.setHealth(val)
 	end)
 
+	self.healthVisible, self.setHealthVisible = Roact.createBinding(true)
 	self.weapon, self.setWeapon = Roact.createBinding("")
 	self.ammo, self.setAmmo = Roact.createBinding("0")
 	self.spare, self.setSpare = Roact.createBinding("0")
@@ -47,6 +47,11 @@ function HUD:init()
 
 		-- Connect a listener to the players health to update the UI
 		self.healthConnection = self.humanoid.HealthChanged:Connect(function(health)
+			if health <= 0 then
+				self.setHealthVisible(false)
+			else
+				self.setHealthVisible(true)
+			end
 			if health > currentHealth then
 				self.healthMotor:setGoal(Flipper.Linear.new(self.humanoid.Health / self.humanoid.MaxHealth, {
 					velocity = self.motorVelocity;
@@ -65,6 +70,11 @@ function HUD:init()
 			if self.healthConnection then
 				self.healthConnection:Disconnect()
 				self.healthConnection = self.humanoid.HealthChanged:Connect(function(health)
+					if health <= 0 then
+						self.setHealthVisible(false)
+					else
+						self.setHealthVisible(true)
+					end
 					if health > currentHealth then
 						self.healthMotor:setGoal(Flipper.Linear.new(self.humanoid.Health / self.humanoid.MaxHealth, {
 							velocity = self.motorVelocity;
@@ -76,6 +86,7 @@ function HUD:init()
 				end)
 			end
 
+			self.setHealthVisible(true)
 			self.healthMotor:setGoal(Flipper.Instant.new(self.humanoid.Health / self.humanoid.MaxHealth))
 		end))
 
@@ -96,6 +107,7 @@ function HUD:render()
 	return Roact.createElement("ScreenGui", {
 		Name = "HUD";
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
+		ResetOnSpawn = false;
 		Enabled = Roact.joinBindings({self.props.visible, self.visible}):map(function(values)
 			return values[1] and values[2]
 		end);
@@ -183,6 +195,7 @@ function HUD:render()
 				Size = self.health:map(function(value)
 					return UDim2.new(0, 0, 1, 0):Lerp(UDim2.new(1, 0, 1, 0), value)
 				end);
+				Visible = self.healthVisible;
 				BackgroundColor3 = Color3.new(0, 0.882, 0.043);
 			}, {
 				UICorner = UICorner(0.4, 0);

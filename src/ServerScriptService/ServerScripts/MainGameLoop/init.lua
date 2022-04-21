@@ -5,15 +5,17 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
-local MapHandler = loadModule("MapHandler")
-local Gamemodes = loadModule("Gamemodes")
-local Leaderboard = loadModule("Leaderboard")
+local spawnPlayerFunc = getDataStream("SpawnPlayerFunc", "RemoteFunction")
 
 local updateLeaderboardUI = getDataStream("UpdateLeaderboardUI", "RemoteEvent")
-local spawnPlayerEvent = getDataStream("SpawnPlayerEvent", "RemoteEvent")
 local playerKilledRemote = getDataStream("PlayerKilled", "RemoteEvent")
 local gameOverEvent = getDataStream("GameOverEvent", "BindableEvent")
 local playerKilledEvent = getDataStream("LocalPlayerKilled", "BindableEvent")
+
+local MapHandler = loadModule("MapHandler")
+local Gamemodes = loadModule("Gamemodes")
+local Leaderboard = loadModule("Leaderboard")
+local WeaponHandler = loadModule("WeaponHandler")
 
 local MainGameLoop = {}
 
@@ -94,16 +96,20 @@ end
 -- When the player clicks spawn on their kit selection screen, spawn them into the game with their chosen kit
 function MainGameLoop:spawnPlayer(player, chosenKit)
 	if player.Character then
+		local success = WeaponHandler.setEquippedKit(player, chosenKit)
+
 		-- We want to filter accessories from bullet hits
 		for _, accessory in pairs(player.Character:GetChildren()) do
 			if accessory:IsA("Accessory") then
 				CollectionService:AddTag(accessory, "Accessory")
 			end
 		end
-	end
-	-- Check if they are allowed to use the kit they chose
-	if self.currentMode then
-		self.currentMode:spawnPlayer(player)
+	
+		-- Check if they are allowed to use the kit they chose
+		if self.currentMode then
+			self.currentMode:spawnPlayer(player)
+		end
+		return success
 	end
 end
 
@@ -121,9 +127,9 @@ function MainGameLoop.playerKilled(killer, victim, weapon)
 	end
 end
 
-spawnPlayerEvent.OnServerEvent:Connect(function(player, chosenKit)
-	MainGameLoop:spawnPlayer(player, chosenKit)
-end)
+spawnPlayerFunc.OnServerInvoke = function(player, chosenKit)
+	return MainGameLoop:spawnPlayer(player, chosenKit)
+end
 
 playerKilledEvent.Event:Connect(MainGameLoop.playerKilled)
 

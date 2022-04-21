@@ -4,9 +4,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
-local PlayerDataManager = loadModule("PlayerDataManager")
-
 local updateLeaderboardUI = getDataStream("UpdateLeaderboardUI", "RemoteEvent")
+
+local PlayerDataManager = loadModule("PlayerDataManager")
 
 local Leaderboard = {
 	playerScores = {};

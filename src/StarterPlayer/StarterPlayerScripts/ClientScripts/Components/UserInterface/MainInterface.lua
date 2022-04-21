@@ -2,7 +2,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
-local SetInterfaceState = getDataStream("SetInterfaceState", "BindableEvent")
+local setInterfaceState = getDataStream("SetInterfaceState", "BindableEvent")
 
 local Roact = loadModule("Roact")
 local Maid = loadModule("Maid")
@@ -20,11 +20,13 @@ local Components = {
 
 local InterfaceStates = {
 	kitSelection = {
+		"KitSelection";
+	};
+	inGame = {
 		"HitMarkers";
 		"HUD";
 		"KillFeed";
 		"KillNotification";
-		"KitSelection";
 		"LeaderboardUI";
 	};
 }
@@ -40,7 +42,7 @@ function MainInterface:init()
 	end
 
 	-- When the setInterfaceState Bindable is fired, set the state of the interface and set the relevant components visibility binding to true/false
-	self.maid:GiveTask(SetInterfaceState.Event:Connect(function(state)
+	self.maid:GiveTask(setInterfaceState.Event:Connect(function(state)
 		if state and InterfaceStates[state] and self.currentState ~= state then
 			self:setState(state)
 		end
@@ -74,6 +76,7 @@ function MainInterface:render()
 	-- Create a screen Gui for the main interface, and put everything else inside this screen gui
 	return Roact.createElement("ScreenGui", {
 		Name = "MainInterface";
+		ResetOnSpawn = false;
 	}, children)
 end
 

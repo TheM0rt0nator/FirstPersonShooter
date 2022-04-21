@@ -2,11 +2,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
+local playerKilledRemote = getDataStream("PlayerKilled", "RemoteEvent")
+
 local Roact = loadModule("Roact")
 local Maid = loadModule("Maid")
 local KillFeedTile = loadModule("KillFeedTile")
-
-local playerKilledRemote = getDataStream("PlayerKilled", "RemoteEvent")
 
 local KillFeed = Roact.Component:extend("KillFeed")
 
@@ -68,6 +68,7 @@ function KillFeed:render()
 	return Roact.createElement("ScreenGui", {
 		Name = "KillFeed";
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
+		ResetOnSpawn = false;
 		Enabled = Roact.joinBindings({self.props.visible, self.visible}):map(function(values)
 			return values[1] and values[2]
 		end);

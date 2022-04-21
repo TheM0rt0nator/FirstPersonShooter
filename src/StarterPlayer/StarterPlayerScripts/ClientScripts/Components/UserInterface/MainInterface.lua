@@ -11,6 +11,8 @@ local MainInterface = Roact.Component:extend("MainInterface")
 
 local Components = {
 	HitMarkers = loadModule("HitMarkers");
+	KillFeed = loadModule("KillFeed");
+	KillNotification = loadModule("KillNotification");
 	KitSelection = loadModule("KitSelection");
 	LeaderboardUI = loadModule("LeaderboardUI");
 }
@@ -18,6 +20,8 @@ local Components = {
 local InterfaceStates = {
 	kitSelection = {
 		"HitMarkers";
+		"KillFeed";
+		"KillNotification";
 		"KitSelection";
 		"LeaderboardUI";
 	};

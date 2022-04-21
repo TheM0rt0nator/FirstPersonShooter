@@ -5,15 +5,15 @@ local RunService = game:GetService("RunService")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
-local WeaponKits = loadModule("WeaponKits")
-local BulletRender = loadModule("BulletRender")
-
 local setEquippedKit = getDataStream("SetEquippedKit", "RemoteEvent")
 local fireWeaponEvent = getDataStream("FireWeapon", "RemoteEvent")
 local aimWeaponEvent = getDataStream("AimWeapon", "RemoteEvent")
 local playerHitEvent = getDataStream("PlayerHit", "RemoteEvent")
 local equipWeaponFunc = getDataStream("EquipWeapon", "RemoteFunction")
 local reloadWeaponFunc = getDataStream("ReloadWeapon", "RemoteFunction")
+
+local WeaponKits = loadModule("WeaponKits")
+local BulletRender = loadModule("BulletRender")
 
 local playerKilledEvent = getDataStream("LocalPlayerKilled", "BindableEvent")
 
@@ -38,6 +38,7 @@ end
 
 -- When player asks server to set their equipped kit, make sure the kit exists and then equip the weapons in the kit
 function WeaponHandler.setEquippedKit(player, kit)
+	-- Could add checks here if there are unlockable kits which the player doesn't have
 	if WeaponKits[kit] and #WeaponKits[kit].Weapons <= WeaponHandler.MAX_WEAPONS then
 		-- Wait for their character to exist
 		if not player.Character then
@@ -78,6 +79,8 @@ function WeaponHandler.setEquippedKit(player, kit)
 				aimFire = player.Character.Humanoid:LoadAnimation(weapon.ServerAnimations.AimFire);
 				idleFire = player.Character.Humanoid:LoadAnimation(weapon.ServerAnimations.HipFire);
 			};
+
+			return true
 		end
 	end
 end
@@ -155,7 +158,8 @@ function WeaponHandler.fireWeapon(player, weapon, origin, velocity)
 	if playersVals.weapons[playersVals.equipped].magData.ammo <= 0 then return end
 	-- Take one away from the server ammo
 	playersVals.weapons[playersVals.equipped].magData.ammo -= 1
-	fireWeaponEvent:FireAllClients(player, origin, velocity)
+
+	fireWeaponEvent:FireAllClients(player, origin, velocity, weapon)
 	if playersVals.aiming then 
 		playersVals.weapons[playersVals.equipped].loadedAnimations.aimFire:Play()	
 	else
@@ -191,12 +195,28 @@ function WeaponHandler.playerHit(player, weapon, bulletNum, hitPart)
 end
 
 -- Function which is called when another player shoots their gun and we want to replicate their bullets
-function WeaponHandler.replicateBullet(fromPlayer, origin, velocity)
+function WeaponHandler.replicateBullet(fromPlayer, origin, velocity, weapon)
 	if Players.LocalPlayer == fromPlayer then return end
 	local bullet = ReplicatedStorage.Assets.Other.Bullet:Clone()
 	bullet.Size = Vector3.new(0.05, 0.05, velocity.Magnitude / 200)
 	bullet.CFrame = CFrame.new(origin + velocity.Unit * bullet.Size.Z, origin + velocity.Unit * bullet.Size.Z * 2)
 	bullet.Parent = workspace.Bullets
+
+	-- If we can, play the firing sound on this client too
+	if fromPlayer.Character 
+		and fromPlayer.Character:FindFirstChild(weapon) 
+		and fromPlayer.Character:FindFirstChild(weapon):FindFirstChild("Receiver") 
+		and fromPlayer.Character[weapon].Receiver:FindFirstChild("FireSound") 
+	then
+		-- Play the firing sound every time we fire on the server too
+		local sound = fromPlayer.Character[weapon].Receiver.FireSound:Clone()
+		sound.Parent = fromPlayer.Character[weapon].Receiver
+		sound:Play()
+		
+		task.delay(2, function()
+			sound:Destroy()
+		end)
+	end
 
 	-- Fire a raycast bullet to calculate actual hits
 	WeaponHandler.BulletRender:fire(origin, velocity, gravity, 2000, "Blacklist", {workspace.Camera, Players.LocalPlayer.Character}, bullet, true)

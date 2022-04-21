@@ -1,21 +1,26 @@
---[[
-	- Create multiple components in this folder which make up the leaderboard, and connect the tab button to it to display it if they are in-game
-	- Create components called the current gamemode so the leaderboard can be different per gamemode
-]]
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Camera = workspace.CurrentCamera
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
 local Roact = loadModule("Roact")
 local Maid = loadModule("Maid")
 local UserInput = loadModule("UserInput")
+local UICorner = loadModule("UICorner")
+local LeaderboardTile = loadModule("LeaderboardTile")
 
-local Leaderboard = Roact.Component:extend("HitMarkers")
+local updateLeaderboardUI = getDataStream("UpdateLeaderboardUI", "RemoteEvent")
+local playerKilledRemote = getDataStream("PlayerKilled", "RemoteEvent")
+
+local Leaderboard = Roact.Component:extend("Leaderboard")
 
 -- When the component is initiated, connect the input for opening it
 function Leaderboard:init()
 	self.maid = Maid.new()
 	self.enabled, self.setEnabled = Roact.createBinding(false)
+	self.canvasSize, self.setCanvasSize = Roact.createBinding(UDim2.new(0, 0, 0, 0))
+	self.roundType = ReplicatedStorage:WaitForChild("GameValues"):WaitForChild("RoundType")
 	UserInput.connectInput(Enum.UserInputType.Keyboard, Enum.KeyCode.Tab, "Leaderboard", {
 		beganFunc = function()
 			-- Only let leaderboard open if we are in correct UI state
@@ -24,10 +29,75 @@ function Leaderboard:init()
 			end
 		end;
 	}, true)
+
+	-- Listen to the update leaderboard and player killed remotes and update the UI
+	self.maid:GiveTask(updateLeaderboardUI.OnClientEvent:Connect(function()
+		if self.mounted then
+			self:setState({})
+		end
+	end))
+	self.maid:GiveTask(playerKilledRemote.OnClientEvent:Connect(function()
+		if self.mounted then
+			self:setState({})
+		end
+	end))
 end
 
 -- Render the component
 function Leaderboard:render()
+	local tiles = {}
+	local tileProps = {}
+	local titleSeparateStats 
+	-- Create the props for all the tiles
+	for _, playerStats in pairs(ReplicatedStorage:WaitForChild("Leaderboard"):GetChildren()) do
+		local playerName = playerStats.Name
+		local separateStats = playerStats:GetChildren()
+		if not titleSeparateStats then
+			titleSeparateStats = separateStats
+		end
+		local props = {
+			playerName = playerName;
+			layoutOrder = 1;
+		}
+		-- Collect the stats and get their layout order and name to be displayed in the UI
+		for _, stat in pairs(separateStats) do
+			props[stat.Name] = {
+				name = stat.Name;
+				layoutOrder = stat:WaitForChild("LayoutOrderVal").Value;
+				value = stat.Value;
+			}
+		end
+		table.insert(tileProps, props)
+	end
+
+	local roundType = self.roundType.Value
+
+	-- Sorts the leaderboard from highest to lowest score type
+	table.sort(tileProps, function(a, b)
+		if a[roundType] and b[roundType] then
+			return tonumber(a[roundType].value) > tonumber(b[roundType].value)
+		end
+	end)
+
+	local titleProps = {
+		playerName = "Player";
+		layoutOrder = 0;
+	}
+	for i, stat in pairs(titleSeparateStats) do
+		titleProps["stat" .. i] = {
+			name = stat.Name;
+			layoutOrder = stat:WaitForChild("LayoutOrderVal").Value;
+			value = stat.Name;
+		}
+	end
+	table.insert(tileProps, 1, titleProps)
+
+	-- Create all the tiles in the correct order
+	for layoutOrder, props in pairs(tileProps) do
+		props.layoutOrder = layoutOrder
+		table.insert(tiles, Roact.createElement(LeaderboardTile, props))
+	end
+
 	return Roact.createElement("ScreenGui", {
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
 		-- Show if we are in the correct UI state and if the component is enabled
@@ -49,132 +119,29 @@ function Leaderboard:render()
 				AnchorPoint = Vector2.new(0.5, 0);
 				Name = "MainFrame";
 				BackgroundTransparency = 1;
-				Position = UDim2.new(0.5, 0, 0.248, 0);
-				Size = UDim2.new(0.95, 0, 0.721, 0);
+				Position = UDim2.new(0.5, 0, 0.13, 0);
+				Size = UDim2.new(0, Camera.ViewportSize.X * 0.2 * 0.95, 0.85, 0);
 				BackgroundColor3 = Color3.new(1, 1, 1);
 				BorderSizePixel = 0;
-				CanvasSize = UDim2.new(0, 0, 0, 0);
+				CanvasSize = self.canvasSize;
 			}, {
-				TileTemplate = Roact.createElement("Frame", {
-					BackgroundTransparency = 1;
-					Name = "TileTemplate";
-					Size = UDim2.new(1, 0, 0.1, 0);
-					BackgroundColor3 = Color3.new(1, 1, 1);
-				}, {
-					Deaths = Roact.createElement("TextLabel", {
-						TextColor3 = Color3.new(0, 0, 0);
-						Text = "1";
-						Name = "Deaths";
-						Size = UDim2.new(0.2, 0, 0.1, 0);
-						Font = Enum.Font.Oswald;
-						BackgroundTransparency = 1;
-						Position = UDim2.new(0.76, 0, 0, 0);
-						BorderSizePixel = 0;
-						FontSize = Enum.FontSize.Size14;
-						TextScaled = true;
-						BackgroundColor3 = Color3.new(1, 1, 1);
-					});
-	
-					Kills = Roact.createElement("TextLabel", {
-						TextColor3 = Color3.new(0, 0, 0);
-						Text = "23";
-						Name = "Kills";
-						Size = UDim2.new(0.2, 0, 0.1, 0);
-						Font = Enum.Font.Oswald;
-						BackgroundTransparency = 1;
-						Position = UDim2.new(0.56, 0, 0, 0);
-						BorderSizePixel = 0;
-						FontSize = Enum.FontSize.Size14;
-						TextScaled = true;
-						BackgroundColor3 = Color3.new(1, 1, 1);
-					});
-	
-					PlayerName = Roact.createElement("TextLabel", {
-						TextColor3 = Color3.new(0, 0, 0);
-						Text = "TheM0rt0antor";
-						Name = "PlayerName";
-						Font = Enum.Font.Oswald;
-						BackgroundTransparency = 1;
-						Size = UDim2.new(0.6, 0, 0.11, 0);
-						BorderSizePixel = 0;
-						FontSize = Enum.FontSize.Size14;
-						TextScaled = true;
-						BackgroundColor3 = Color3.new(1, 1, 1);
-					});
-				});
-	
-				UITableLayout = Roact.createElement("UITableLayout", {
-					SortOrder = Enum.SortOrder.LayoutOrder;
-					HorizontalAlignment = Enum.HorizontalAlignment.Center;
-				});
-			});
-	
-			Titles = Roact.createElement("Frame", {
-				AnchorPoint = Vector2.new(0.5, 0);
-				Name = "Titles";
-				BackgroundTransparency = 1;
-				Position = UDim2.new(0.5, 0, 0.139, 0);
-				Size = UDim2.new(0.95, 0, 0.091, 0);
-				BorderSizePixel = 0;
-				BackgroundColor3 = Color3.new(1, 1, 1);
-			}, {
-				NameTitle = Roact.createElement("TextLabel", {
-					TextColor3 = Color3.new(0, 0, 0);
-					Text = "Player";
-					Font = Enum.Font.Oswald;
-					BackgroundTransparency = 1;
-					Name = "NameTitle";
-					Size = UDim2.new(0.6, 0, 1, 0);
-					FontSize = Enum.FontSize.Size14;
-					TextScaled = true;
-					BackgroundColor3 = Color3.new(1, 1, 1);
-				});
-	
-				KillsTitle = Roact.createElement("TextLabel", {
-					LayoutOrder = 2;
-					TextColor3 = Color3.new(0, 0, 0);
-					Text = "Kills";
-					Name = "KillsTitle";
-					Font = Enum.Font.Oswald;
-					BackgroundTransparency = 1;
-					FontSize = Enum.FontSize.Size14;
-					Size = UDim2.new(0.2, 0, 1, 0);
-					ZIndex = 2;
-					TextScaled = true;
-					BackgroundColor3 = Color3.new(1, 1, 1);
-				});
-	
-				DeathsTitle = Roact.createElement("TextLabel", {
-					LayoutOrder = 4;
-					TextColor3 = Color3.new(0, 0, 0);
-					Text = "Deaths";
-					Font = Enum.Font.Oswald;
-					BackgroundTransparency = 1;
-					Name = "DeathsTitle";
-					Size = UDim2.new(0.2, 0, 1, 0);
-					FontSize = Enum.FontSize.Size14;
-					TextScaled = true;
-					BackgroundColor3 = Color3.new(1, 1, 1);
-				});
-	
+				Roact.createFragment(tiles);
+
 				UIListLayout = Roact.createElement("UIListLayout", {
-					FillDirection = Enum.FillDirection.Horizontal;
+					FillDirection = Enum.FillDirection.Vertical;
 					SortOrder = Enum.SortOrder.LayoutOrder;
+					[Roact.Change.AbsoluteContentSize] = function(ui)
+						self.setCanvasSize(UDim2.new(0, ui.AbsoluteContentSize.X, 0, ui.AbsoluteContentSize.Y + 10))
+					end
 				});
 			});
 	
-			UICorner = Roact.createElement("UICorner", {
-				CornerRadius = UDim.new(1, 0);
-			});
-	
-			UICorner = Roact.createElement("UICorner", {
-				CornerRadius = UDim.new(0.05, 0);
-			});
+			UICorner = UICorner(0.05, 0);
 	
 			Title = Roact.createElement("TextLabel", {
 				FontSize = Enum.FontSize.Size14;
 				TextColor3 = Color3.new(0, 0, 0);
-				Text = "Free For All";
+				Text = ReplicatedStorage:WaitForChild("GameValues").CurrentMode.Value;
 				Name = "Title";
 				AnchorPoint = Vector2.new(0.5, 0);
 				Font = Enum.Font.Oswald;
@@ -192,6 +159,8 @@ function Leaderboard:render()
 				Size = UDim2.new(0.706, 0, 0.001, 0);
 				BorderSizePixel = 0;
 				BackgroundColor3 = Color3.new(0, 0, 0);
+			}, {
+				UICorner = UICorner(1, 0);
 			});
 		});
 	})
@@ -201,6 +170,11 @@ end
 function Leaderboard:willUnmount()
 	self.maid:DoCleaning()
 	UserInput.disconnectInput(Enum.UserInputType.Keyboard, "Leaderboard")
+end
+
+-- Let the component know it has been mounted
+function Leaderboard:didMount()
+	self.mounted = true
 end
 
 return Leaderboard

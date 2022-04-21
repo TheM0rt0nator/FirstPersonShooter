@@ -411,10 +411,7 @@ function Weapon:connectInput()
 		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
 		UserInput.connectInput(inputType, keybind, "Crouch" .. bindNum, {
 			beganFunc = function()
-				self:crouch(true)
-			end;
-			endedFunc = function()
-				self:crouch(false)
+				self:crouch(not crouching)
 			end;
 		}, true)
 	end

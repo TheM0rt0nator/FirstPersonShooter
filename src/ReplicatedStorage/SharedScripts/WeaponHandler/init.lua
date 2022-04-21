@@ -21,6 +21,18 @@ local WeaponHandler = {
 	players = {};
 }
 
+function WeaponHandler:initiate()
+	if RunService:IsClient() then return end
+	task.spawn(function()
+		-- Run playerAdded for any players already in-game
+		for _, player in pairs(Players:GetPlayers()) do
+			WeaponHandler.playerAdded(player)
+		end
+		Players.PlayerAdded:Connect(WeaponHandler.playerAdded)
+		Players.PlayerRemoving:Connect(WeaponHandler.playerRemoving)
+	end)
+end
+
 -- When player asks server to set their equipped kit, make sure the kit exists and then equip the weapons in the kit
 function WeaponHandler.setEquippedKit(player, kit)
 	if WeaponKits[kit] and #WeaponKits[kit].Weapons <= WeaponHandler.MAX_WEAPONS then
@@ -104,10 +116,9 @@ function WeaponHandler.equipWeapon(player, weapon, bool)
 		-- Holster the gun
 		weaponModel.Receiver.WeaponHold.Part0 = nil
 		weaponModel.Receiver.BackWeld.Part0 = player.Character["UpperTorso"]
-		playersVals.weapons[playersVals.equipped].loadedAnimations.idle:Stop()
-		playersVals.weapons[playersVals.equipped].loadedAnimations.aim:Stop()
-		playersVals.weapons[playersVals.equipped].loadedAnimations.aimFire:Stop()	
-		playersVals.weapons[playersVals.equipped].loadedAnimations.idleFire:Stop()
+		for _, anim in pairs(playersVals.weapons[playersVals.equipped].loadedAnimations) do
+			anim:Stop()
+		end
 	end	
 
 	return true 
@@ -208,12 +219,5 @@ elseif RunService:IsClient() then
 	WeaponHandler.BulletRender = BulletRender.new()
 	fireWeaponEvent.OnClientEvent:Connect(WeaponHandler.replicateBullet)
 end
-
--- Run playerAdded for any players already in-game
-for _, player in pairs(Players:GetPlayers()) do
-	WeaponHandler.playerAdded(player)
-end
-Players.PlayerAdded:Connect(WeaponHandler.playerAdded)
-Players.PlayerRemoving:Connect(WeaponHandler.playerRemoving)
 
 return WeaponHandler

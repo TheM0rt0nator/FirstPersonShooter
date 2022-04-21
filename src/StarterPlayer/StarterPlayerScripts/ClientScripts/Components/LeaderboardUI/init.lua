@@ -18,11 +18,10 @@ function Leaderboard:init()
 	self.enabled, self.setEnabled = Roact.createBinding(false)
 	UserInput.connectInput(Enum.UserInputType.Keyboard, Enum.KeyCode.Tab, "Leaderboard", {
 		beganFunc = function()
-			print("Setting enabled")
-			self.setEnabled(true)
-		end;
-		endedFunc = function()
-			self.setEnabled(false)
+			-- Only let leaderboard open if we are in correct UI state
+			if self.props.visible:getValue() then
+				self.setEnabled(not self.enabled:getValue())
+			end
 		end;
 	}, true)
 end
@@ -33,7 +32,6 @@ function Leaderboard:render()
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
 		-- Show if we are in the correct UI state and if the component is enabled
 		Enabled = Roact.joinBindings({self.props.visible, self.enabled}):map(function(values)
-			print(values)
 			return values[1] and values[2]
 		end);
 	}, {

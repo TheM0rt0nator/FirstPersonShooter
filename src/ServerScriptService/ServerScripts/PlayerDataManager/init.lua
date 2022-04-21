@@ -16,12 +16,14 @@ local PlayerDataManager = {
 	leftBools = {};
 }
 
--- Sets up the check for when the rodux store changes to update the players data, and sets up the playerAdded/playerRemoving functions
+-- Run player added for any players in the game already
 function PlayerDataManager:initiate()
 	task.spawn(function()
 		for _, player in pairs(Players:GetPlayers()) do
 			PlayerDataManager.playerAdded(player)
 		end
+		Players.PlayerAdded:Connect(PlayerDataManager.playerAdded)
+		Players.PlayerRemoving:Connect(PlayerDataManager.playerRemoving)
 	end)
 end
 
@@ -35,6 +37,18 @@ function PlayerDataManager:waitForLoadedData(player)
 	while not PlayerDataManager.loadedData[tostring(player.UserId)] do
 		task.wait()
 	end
+end
+
+-- Returns the session data for the given player
+function PlayerDataManager:getSessionData(player)
+	return DataStore.getData(PlayerDataStore, "User_" .. player.UserId, Table.clone(DefaultData)) or {}
+end
+
+-- Changes a players session data to then be changed in the datastore (merges the given table into their current data)
+function PlayerDataManager:changeSessionData(player, dataTable)
+	local playerDataIndex = "User_" .. player.UserId
+	local currentData = DataStore.getData(PlayerDataStore, playerDataIndex, Table.clone(DefaultData)) or {}
+	DataStore.setSessionData(PlayerDataStore, playerDataIndex, Table.merge(currentData, dataTable))
 end
 
 -- When player joins, set their session data to their existing data or the default data table if they have no data
@@ -53,12 +67,5 @@ function PlayerDataManager.playerRemoving(player)
 	DataStore.removeSessionData(PlayerDataStore, "User_" .. userId, true)
 	PlayerDataManager.loadedData[tostring(player.UserId)] = nil
 end
-
--- Run playerAdded for any players already in-game
-for _, player in pairs(Players:GetPlayers()) do
-	PlayerDataManager.playerAdded(player)
-end
-Players.PlayerAdded:Connect(PlayerDataManager.playerAdded)
-Players.PlayerRemoving:Connect(PlayerDataManager.playerRemoving)
 
 return PlayerDataManager

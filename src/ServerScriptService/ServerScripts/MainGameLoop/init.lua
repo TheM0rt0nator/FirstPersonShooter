@@ -1,5 +1,6 @@
 -- Runs the main game loop
 local Players = game:GetService("Players")
+local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
@@ -8,8 +9,11 @@ local MapHandler = loadModule("MapHandler")
 local Gamemodes = loadModule("Gamemodes")
 local Leaderboard = loadModule("Leaderboard")
 
+local updateLeaderboardUI = getDataStream("UpdateLeaderboardUI", "RemoteEvent")
 local spawnPlayerEvent = getDataStream("SpawnPlayerEvent", "RemoteEvent")
+local playerKilledRemote = getDataStream("PlayerKilled", "RemoteEvent")
 local gameOverEvent = getDataStream("GameOverEvent", "BindableEvent")
+local playerKilledEvent = getDataStream("LocalPlayerKilled", "BindableEvent")
 
 local MainGameLoop = {}
 
@@ -39,6 +43,7 @@ function MainGameLoop:initiate()
 				for _, player in pairs(Players:GetPlayers()) do
 					Leaderboard.createValues(ReplicatedStorage.Leaderboard:WaitForChild(player.Name))
 				end
+				updateLeaderboardUI:FireAllClients()
 				self.roundType.Value = self.currentMode.roundType or "Kills"
 			end)
 			if not modeChosen then 
@@ -88,14 +93,38 @@ end
 
 -- When the player clicks spawn on their kit selection screen, spawn them into the game with their chosen kit
 function MainGameLoop:spawnPlayer(player, chosenKit)
+	if player.Character then
+		-- We want to filter accessories from bullet hits
+		for _, accessory in pairs(player.Character:GetChildren()) do
+			if accessory:IsA("Accessory") then
+				CollectionService:AddTag(accessory, "Accessory")
+			end
+		end
+	end
 	-- Check if they are allowed to use the kit they chose
 	if self.currentMode then
 		self.currentMode:spawnPlayer(player)
 	end
 end
 
+-- When a player is killed, we run the playerKilled function for the current gamemode
+function MainGameLoop.playerKilled(killer, victim, weapon)
+	if not killer or not victim or MainGameLoop.gameStatus.Value ~= "GameRunning" then return end
+	-- Increment the killer and victims scores
+	Leaderboard:incrementScore(victim, "Deaths", 1)
+	if Players:FindFirstChild(killer.Name) then
+		Leaderboard:incrementScore(Players:FindFirstChild(killer.Name), "Kills", 1)
+	end
+	playerKilledRemote:FireAllClients(killer.Name, victim.Name, weapon)
+	if MainGameLoop.currentMode and MainGameLoop.currentMode.playerKilled then
+		MainGameLoop.currentMode.playerKilled(MainGameLoop.currentMode, killer, victim, weapon)
+	end
+end
+
 spawnPlayerEvent.OnServerEvent:Connect(function(player, chosenKit)
 	MainGameLoop:spawnPlayer(player, chosenKit)
 end)
+
+playerKilledEvent.Event:Connect(MainGameLoop.playerKilled)
 
 return MainGameLoop

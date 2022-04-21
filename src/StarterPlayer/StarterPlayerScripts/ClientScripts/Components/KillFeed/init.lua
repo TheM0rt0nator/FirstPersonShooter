@@ -1,7 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Camera = workspace.CurrentCamera
-
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
 local Roact = loadModule("Roact")

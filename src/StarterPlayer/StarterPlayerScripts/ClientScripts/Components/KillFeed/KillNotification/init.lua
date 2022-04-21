@@ -1,12 +1,5 @@
---[[
-	- Just a notification which appears when you get a kill, probably in the top middle of the screen and shows who you killed
-]]
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local Player = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
@@ -15,6 +8,9 @@ local Maid = loadModule("Maid")
 local KillNotificationTile = loadModule("KillNotificationTile")
 
 local playerKilledRemote = getDataStream("PlayerKilled", "RemoteEvent")
+
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
 
 local KillNotification = Roact.Component:extend("KillFeed")
 
@@ -28,7 +24,7 @@ function KillNotification:init()
 	self.visible, self.setVisible = Roact.createBinding(false)
 	-- Connect to the player killed remote and check if we are the killer
 	self.maid:GiveTask(playerKilledRemote.OnClientEvent:Connect(function(killer, victim, weapon)
-		if Player.Name == killer then
+		if player.Name == killer then
 			-- Play a sound to notify them they got a kill
 			ReplicatedStorage.Assets.Sounds.KillSound:Play()
 			-- Could add a cool animation here but limited time

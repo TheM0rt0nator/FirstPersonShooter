@@ -1,7 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Camera = workspace.CurrentCamera
-
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
 local Roact = loadModule("Roact")
@@ -12,6 +10,8 @@ local LeaderboardTile = loadModule("LeaderboardTile")
 
 local updateLeaderboardUI = getDataStream("UpdateLeaderboardUI", "RemoteEvent")
 local playerKilledRemote = getDataStream("PlayerKilled", "RemoteEvent")
+
+local camera = workspace.CurrentCamera
 
 local Leaderboard = Roact.Component:extend("Leaderboard")
 
@@ -120,7 +120,7 @@ function Leaderboard:render()
 				Name = "MainFrame";
 				BackgroundTransparency = 1;
 				Position = UDim2.new(0.5, 0, 0.13, 0);
-				Size = UDim2.new(0, Camera.ViewportSize.X * 0.2 * 0.95, 0.85, 0);
+				Size = UDim2.new(0, camera.ViewportSize.X * 0.2 * 0.95, 0.85, 0);
 				BackgroundColor3 = Color3.new(1, 1, 1);
 				BorderSizePixel = 0;
 				CanvasSize = self.canvasSize;

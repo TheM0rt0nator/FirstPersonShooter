@@ -2,22 +2,61 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
+local spawnPlayerFunc = getDataStream("SpawnPlayerFunc", "RemoteFunction")
+local setInterfaceState = getDataStream("SetInterfaceState", "BindableEvent")
+
 local Roact = loadModule("Roact")
 local Maid = loadModule("Maid")
 local UICorner = loadModule("UICorner")
 local KitInfoFrame = loadModule("KitInfoFrame")
 local KitButtonTemplate = loadModule("KitButtonTemplate")
 local WeaponKits = loadModule("WeaponKits")
+local Weapon = loadModule("Weapon")
+local UserInput = loadModule("UserInput")
+local Keybinds = loadModule("Keybinds")
 
-local spawnPlayerEvent = getDataStream("SpawnPlayerEvent", "RemoteEvent")
+local camera = workspace.CurrentCamera
 
 local KitSelection = Roact.Component:extend("KitSelection")
 
 -- Set up the timer binding
 function KitSelection:init()
-	self:setState({
-		currentKit = "Assault";
-	})
+	self.maid = Maid.new()
+	self.debounce = false
+	task.spawn(function()
+		self.gameStatus = ReplicatedStorage:WaitForChild("GameValues"):WaitForChild("GameStatus")
+		local text = if self.gameStatus.Value == "GameRunning" then "DEPLOY" else "INTERMISSION"
+		self.buttonText, self.setButtonText = Roact.createBinding(text)
+		self.maid:GiveTask(self.gameStatus.Changed:Connect(function()
+			self.setButtonText(if self.gameStatus.Value == "GameRunning" then "DEPLOY" else "INTERMISSION")
+		end))
+		self:setState({
+			currentKit = "Assault";
+		})
+	end)
+end
+
+-- Creates the weapon objects and sets up the input to equip them
+function KitSelection:setupWeapons()
+	for weaponNum, weapon in pairs(WeaponKits[self.state.currentKit].Weapons) do
+		local newWeapon = Weapon.new(weapon)
+
+		-- Connects all the inputs from keybinds module to equip this weapon
+		for bindNum, keybind in ipairs(Keybinds["Equip" .. weaponNum]) do
+			local inputType = (keybind.EnumType == Enum.UserInputType and keybind) or Enum.UserInputType.Keyboard
+			local keyCode = keybind.EnumType == Enum.KeyCode and keybind
+			UserInput.connectInput(inputType, keyCode, "EquipWeapon" .. weaponNum .. bindNum, {
+				endedFunc = function()
+					newWeapon:equip(not newWeapon.equipped)
+				end;
+			}, true)
+		end
+
+		if weaponNum == "Primary" then
+			newWeapon:equip(true)
+		end
+	end
+	setInterfaceState:Fire("inGame")
 end
 
 -- Render the UI
@@ -46,6 +85,7 @@ function KitSelection:render()
 	return Roact.createElement("ScreenGui", {
 		Name = "KitSelection";
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
+		ResetOnSpawn = false;
 		Enabled = visible;
 	}, {
 		Holder = Roact.createElement("Frame", {
@@ -113,7 +153,7 @@ function KitSelection:render()
 			DeployButton = Roact.createElement("TextButton", {
 				FontSize = Enum.FontSize.Size14;
 				TextColor3 = Color3.new(0, 0, 0);
-				Text = "DEPLOY";
+				Text = self.buttonText;
 				AnchorPoint = Vector2.new(0.5, 0);
 				Font = Enum.Font.Oswald;
 				Name = "SpawnButton";
@@ -122,7 +162,17 @@ function KitSelection:render()
 				TextScaled = true;
 				BackgroundColor3 = Color3.new(1, 1, 1);
 				[Roact.Event.MouseButton1Click] = function()
-					spawnPlayerEvent:FireServer("Assault")
+					if not self.debounce and self.buttonText:getValue() == "DEPLOY" then
+						self.debounce = true
+						self.setButtonText("DEPLOYING")
+						local success = spawnPlayerFunc:InvokeServer(self.state.currentKit)
+						if success then
+							self:setupWeapons()
+							camera.CameraType = Enum.CameraType.Custom
+						end
+						task.wait(3)
+						self.debounce = false
+					end
 				end;
 			}, {
 				UICorner = UICorner(0.2, 0);

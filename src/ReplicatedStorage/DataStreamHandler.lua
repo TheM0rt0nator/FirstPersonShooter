@@ -43,7 +43,7 @@ function DataStreams:getDataStream(streamName, streamType)
 	assert(typeof(streamName) == "string" and PossibleStreams[streamType], "Invalid arguments while trying to get data stream")
 
 	local function getStream(folder)
-		if folder:WaitForChild(streamName, 1) then
+		if folder:FindFirstChild(streamName) then
 			return folder:FindFirstChild(streamName)
 		else
 			local newStream = Instance.new(streamType, folder)

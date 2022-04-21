@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CollectionService = game:GetService("CollectionService")
 local RunService = game:GetService("RunService")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
@@ -13,6 +14,8 @@ local aimWeaponEvent = getDataStream("AimWeapon", "RemoteEvent")
 local playerHitEvent = getDataStream("PlayerHit", "RemoteEvent")
 local equipWeaponFunc = getDataStream("EquipWeapon", "RemoteFunction")
 local reloadWeaponFunc = getDataStream("ReloadWeapon", "RemoteFunction")
+
+local playerKilledEvent = getDataStream("LocalPlayerKilled", "BindableEvent")
 
 local gravity = Vector3.new(0, workspace.Gravity, 0)
 
@@ -44,6 +47,8 @@ function WeaponHandler.setEquippedKit(player, kit)
 		-- Clone gun and save it in the players table
 		local weapon = ReplicatedStorage.Assets.Weapons[WeaponKits[kit].Weapons.Primary]:Clone()
 		local weaponSettings = require(weapon.Settings)
+
+		CollectionService:AddTag(weapon, "Weapon")
 
 		-- Could add code here to edit settings for the gun (larger or more magazines etc)
 		
@@ -175,10 +180,13 @@ end
 -- When a player is hit, need to check to make sure the hit is valid and then deal damage
 function WeaponHandler.playerHit(player, weapon, bulletNum, hitPart)
 	if hitPart.Parent and hitPart.Parent:FindFirstChild("Humanoid") and hitPart.Parent.Humanoid.Health > 0 then--and Players:FindFirstChild(hitPart.Parent.Name) then
-	local playersVals = WeaponHandler.players[tostring(player.UserId)]
-	local weaponsStats = playersVals.weapons[playersVals.equipped].settings.weaponStats
-	local damage = (hitPart.Name == "Head" and weaponsStats.headshot) or weaponsStats.damage
+		local playersVals = WeaponHandler.players[tostring(player.UserId)]
+		local weaponsStats = playersVals.weapons[playersVals.equipped].settings.weaponStats
+		local damage = (hitPart.Name == "Head" and weaponsStats.headshot) or weaponsStats.damage
 		hitPart.Parent.Humanoid:TakeDamage(damage)
+		if hitPart.Parent.Humanoid.Health <= 0 then
+			playerKilledEvent:Fire(player, Players:FindFirstChild(hitPart.Parent.Name), weapon)
+		end
 	end
 end
 

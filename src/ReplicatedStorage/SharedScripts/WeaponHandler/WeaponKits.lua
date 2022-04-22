@@ -7,27 +7,36 @@ return {
 			Secondary = "Desert Eagle";
 		};
 		Equipment = {
-			"Flashbang";
+			{
+				Name = "M62";
+				Amount = 2;
+			};
 		};
 		layoutOrder = 1;
-	};
-	Recon = {
-		Weapons = {
-			Primary = "Intervention";
-			Secondary = "M1911A1";
-		};
-		Equipment = {
-			"M67";
-		};
-		layoutOrder = 2;
 	};
 	Support = {
 		Weapons = {
 			Primary = "AK47";
-			Secondary = "RPG";
+			Secondary = "M1911A1";
 		};
 		Equipment = {
-			"Smoke Grenade";
+			{
+				Name = "Flare";
+				Amount = 2;
+			};
+		};
+		layoutOrder = 2;
+	};
+	Recon = {
+		Weapons = {
+			Primary = "Intervention";
+			Secondary = "Desert Eagle";
+		};
+		Equipment = {
+			{
+				Name = "Smoke Grenade";
+				Amount = 2;
+			}
 		};
 		layoutOrder = 3;
 	};

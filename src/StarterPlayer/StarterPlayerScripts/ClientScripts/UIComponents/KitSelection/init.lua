@@ -97,7 +97,7 @@ function KitSelection:render()
 					text = "Equipment";
 					size = UDim2.new(1, 0, 0.33, 0);
 					position = UDim2.new(0, 0, 0.66, 0);
-					weaponName = WeaponKits[currentKit].Equipment[1];
+					weaponName = WeaponKits[currentKit].Equipment[1].Name;
 				});
 	
 				UICorner = UICorner(0.1, 0);

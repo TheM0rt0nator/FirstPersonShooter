@@ -10,32 +10,37 @@ local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framewo
 local fireWeaponEvent = getDataStream("FireWeapon", "RemoteEvent")
 local aimWeaponEvent = getDataStream("AimWeapon", "RemoteEvent")
 local playerHitEvent = getDataStream("PlayerHit", "RemoteEvent")
+local useEquipmentFunc = getDataStream("UseEquipment", "RemoteFunction")
 local equipWeaponFunc = getDataStream("EquipWeapon", "RemoteFunction")
 local reloadWeaponFunc = getDataStream("ReloadWeapon", "RemoteFunction")
 
 local ammoChanged = getDataStream("AmmoChanged", "BindableEvent")
 local weaponChanged = getDataStream("WeaponChanged", "BindableEvent")
 local hitPlayerEvent = getDataStream("HitPlayerEvent", "BindableEvent")
+local crouchEvent = getDataStream("CrouchEvent", "BindableEvent")
+local sprintEvent = getDataStream("SprintEvent", "BindableEvent")
 
 local Maths = loadModule("Maths")
+local Maid = loadModule("Maid")
 local Spring = loadModule("Spring")
 local UserInput = loadModule("UserInput")
 local Keybinds = loadModule("Keybinds")
 local BulletRender = loadModule("BulletRender")
+local CharacterManager = loadModule("CharacterManager")
+local EquipmentFuncs = loadModule("EquipmentFuncs")
 
 local player = Players.LocalPlayer
 local rand = Random.new()
 local gravity = Vector3.new(0, workspace.Gravity, 0)
--- Made crouching global so you stay crouching even if you switch weapons
-local crouching = false
 
 local Weapon = {}
 Weapon.__index = Weapon
 
--- Create a new weapon object
-function Weapon.new(name)
+-- Create a new weapon object, where equipment is a table of the equipment that come with this weapon
+function Weapon.new(name, handler, equipment)
 	local self = {
 		name = name;
+		maid = Maid.new();
 		canFire = true;
 		loadedAnimations = {};
 		hitDetector = BulletRender.new();
@@ -53,6 +58,7 @@ function Weapon.new(name)
 			idleOverride = Instance.new("NumberValue");
 			equip = Instance.new("NumberValue");
 			crouch = Instance.new("NumberValue");
+			equipmentHold = Instance.new("NumberValue");
 		};
 	}
 	
@@ -68,26 +74,17 @@ function Weapon.new(name)
 
 	-- Find our weapon
 	self.storedWeapon = ReplicatedStorage.Assets.Weapons:FindFirstChild(self.name)
+	self.handler = handler
 
 	if self.storedWeapon then
 		-- Save the settings table
 		self.settings = require(self.storedWeapon.Settings)
-		self.weaponStats = self.settings.weaponStats
-	
+
 		-- Setup the magazine and ammunition
-		self.ammo = self.weaponStats.magCapacity
-		self.spareBullets = self.weaponStats.spareBullets
+		self.ammo = self.settings.magCapacity
+		self.spareBullets = self.settings.spareBullets
 	end
 
-	-- Connect a listener to the hit event so we can do damage etc
-	self.hitConnection = self.hitDetector.hitEvent.Event:Connect(function(part)
-		-- Could add a particle effect here to add blood splatters etc
-		if part.Parent and part.Parent:FindFirstChild("Humanoid") and part.Parent.Humanoid.Health > 0 then
-			-- Fire a bindable to tell the UI to show hitmarkers
-			hitPlayerEvent:Fire(part)
-			playerHitEvent:FireServer(self.name, 1, part)
-		end
-	end)
 	setmetatable(self, Weapon)
 
 	return self
@@ -111,32 +108,47 @@ function Weapon:equip(bool)
 		-- Get a clone of the weapon, or cancel the function if the weapon doesn't exist
 		if not self.storedWeapon then return end
 		self.weapon = self.storedWeapon:Clone()
-
-		-- Get a viewmodel and put the weapons contents inside it
 		self.viewmodel = ReplicatedStorage.Assets.Other.ViewModel:Clone()
+
+		-- Create folders to hold our weapon and equipment parts when they are equipped
+		self.weaponHolder = Instance.new("Folder", self.viewmodel)
+		self.weaponHolder.Name = "WeaponHolder"
+		self.equipmentHolder = Instance.new("Folder", self.viewmodel)
+		self.equipmentHolder.Name = "EquipmentHolder"
+
+		-- Put the weapons contents inside the viewmodel
 		for _, instance in pairs(self.weapon:GetChildren()) do
-			instance.Parent = self.viewmodel
+			instance.Parent = self.weaponHolder
 			if instance:IsA("BasePart") then
 				instance.CanCollide = false
 				instance.CastShadow = false
 			end
 		end	
+
+		-- Destroy the model
+		self.weapon:Destroy()
 	end
 
-	-- Connect the update function when we equip
-	self.renderConnection = RunService.RenderStepped:Connect(function(dt)
-		self:update(dt)
-	end)
+	-- Connect the listeners
+	self:connectListeners()
+	if not self.renderConnection then
+		-- Connect the update function when we equip
+		self.renderConnection = RunService.RenderStepped:Connect(function(dt)
+			self:update(dt)
+		end)
+	end
 
 	self.camera = workspace.CurrentCamera
 	
+	-- Set these values when we equip to continue from previous gun
 	self.lerpValues.equip.Value = 1
-	self.lerpValues.crouch.Value = crouching and 1 or 0
+	self.lerpValues.crouch.Value = CharacterManager.crouching and 1 or 0
+	self.lerpValues.sprint.Value = CharacterManager.isSprinting and 1 or 0
 
 	-- Bound the gun to the viewmodels root part
-	self.viewmodel.RootPart.weapon.Part1 = self.viewmodel.WeaponRootPart
-	self.viewmodel.Left.leftHand.Part0 = self.viewmodel.WeaponRootPart
-	self.viewmodel.Right.rightHand.Part0 = self.viewmodel.WeaponRootPart
+	self.viewmodel.RootPart.weapon.Part1 = self.weaponHolder.WeaponRootPart
+	self.viewmodel.Left.leftHandWeapon.Part0 = self.weaponHolder.WeaponRootPart
+	self.viewmodel.Right.rightHandWeapon.Part0 = self.weaponHolder.WeaponRootPart
 	self.viewmodel.Parent = workspace.Camera
 
     -- Load animations from settings
@@ -147,8 +159,8 @@ function Weapon:equip(bool)
 	local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 	TweenService:Create(self.lerpValues.equip, tweenInfo, {Value = 0}):Play()
 
-	if self.viewmodel.Receiver:FindFirstChild("EquipSound") then
-		self.viewmodel.Receiver.EquipSound:Play()
+	if self.weaponHolder.Receiver:FindFirstChild("EquipSound") then
+		self.weaponHolder.Receiver.EquipSound:Play()
 	end
 
 	-- Fire these bindables to change the HUD
@@ -167,40 +179,41 @@ function Weapon:unequip()
 	self:aim(false)
 	self:fire(false)
 	self.equipped = false
-	-- Disconnect inputs
+	-- Disconnect inputs and listeners
 	self:disconnectInput()
+	self:disconnectListeners()
 	-- Ask server if we can unequip, and get the server to unequip on server side
 	task.spawn(function()
 		equipWeaponFunc:InvokeServer(self.name, false)
 	end)
-	if self.viewmodel.Receiver:FindFirstChild("UnequipSound") then
-		self.viewmodel.Receiver.UnequipSound:Play()
+	if self.weaponHolder.Receiver:FindFirstChild("UnequipSound") then
+		self.weaponHolder.Receiver.UnequipSound:Play()
 	end
 	-- Destroy the viewmodel, which also destroys the gun, and set equipped to false
 	local tweenInfo = TweenInfo.new(0.6, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 	TweenService:Create(self.lerpValues.equip, tweenInfo, {Value = 1}):Play()
-	task.wait(0.6)
-	if self.equipped then return end
-	-- Re enable the mouse icon
-	UserInputService.MouseIconEnabled = true
-	-- Stop all animations
-	for _, anim in pairs(self.loadedAnimations) do
-		anim:Stop()
-	end
-	if self.renderConnection then
-		self.renderConnection:Disconnect()
-		self.renderConnection = nil
-	end
-	if self.viewmodel then
-		self.viewmodel:Destroy()
-		self.viewmodel = nil
-	end
+	task.delay(0.6, function()
+		if self.equipped then return end
+		-- Stop all animations
+		for _, anim in pairs(self.loadedAnimations) do
+			anim:Stop()
+		end
+		-- Disconnect update function
+		if self.renderConnection then
+			self.renderConnection:Disconnect()
+			self.renderConnection = nil
+		end
+		if self.viewmodel then
+			self.viewmodel:Destroy()
+			self.viewmodel = nil
+		end
+	end)
 end
 
 -- Activate / deactivate firing the weapon
 function Weapon:fire(bool)
 	-- Check to make sure we can fire the weapon
-	if self.reloading or not self.equipped then return end
+	if self.reloading or not self.equipped or self.disabled then return end
 	if self.firing and bool then return end 
 
 	if bool and self.ammo <= 0 then
@@ -213,7 +226,7 @@ function Weapon:fire(bool)
 	-- Set the firing value to the bool and then return if we are not firing anymore
 	self.firing = bool
 	if not bool then return end
-	if self.isSprinting then
+	if CharacterManager.isSprinting then
 		self:sprint(false, true)
 	end
 
@@ -224,15 +237,15 @@ function Weapon:fire(bool)
 
 	local function fire()
 		if self.ammo <= 0 then 
-			if self.viewmodel.Receiver:FindFirstChild("NoAmmoSound") then
-				self.viewmodel.Receiver.NoAmmoSound:Play()
+			if self.weaponHolder.Receiver:FindFirstChild("NoAmmoSound") then
+				self.weaponHolder.Receiver.NoAmmoSound:Play()
 			end
 			self.firing = false 
 			return 
 		end
 		-- Play the firing sound every time we fire
-		local sound = self.viewmodel.Receiver.FireSound:Clone()
-		sound.Parent = self.viewmodel.Receiver
+		local sound = self.weaponHolder.Receiver.FireSound:Clone()
+		sound.Parent = self.weaponHolder.Receiver
 		sound:Play()
 		
 		task.delay(2, function()
@@ -240,7 +253,7 @@ function Weapon:fire(bool)
 		end)
 		
 		-- Muzzle flash
-		for _, v in pairs(self.viewmodel.Receiver.MuzzleFlashAttachment:GetChildren()) do
+		for _, v in pairs(self.weaponHolder.Receiver.MuzzleFlashAttachment:GetChildren()) do
 			if v:IsA("ParticleEmitter") then
 				v:Emit(v.Rate)
 			end
@@ -251,15 +264,15 @@ function Weapon:fire(bool)
 		ammoChanged:Fire(self.ammo, self.spareBullets)
 
 		-- Render a real bullet for visuals
-		local origin = self.viewmodel.Barrel.Position
-		local bulletDirection = (self.viewmodel.Muzzle.Position - origin).Unit
+		local origin = self.weaponHolder.Barrel.Position
+		local bulletDirection = (self.weaponHolder.Muzzle.Position - origin).Unit
 
-		local initialVelocity = bulletDirection * self.weaponStats.velocity
+		local initialVelocity = bulletDirection * self.settings.velocity
 		-- Tell the server we have fired a bullet
 		fireWeaponEvent:FireServer(self.name, origin, initialVelocity)
 
 		local bullet = ReplicatedStorage.Assets.Other.Bullet:Clone()
-		bullet.Size = Vector3.new(0.05, 0.05, self.weaponStats.velocity / 200)
+		bullet.Size = Vector3.new(0.05, 0.05, self.settings.velocity / 200)
 		bullet.CFrame = CFrame.new(origin + bulletDirection * bullet.Size.Z, origin + bulletDirection * bullet.Size.Z * 2)
 		bullet.Parent = workspace.Bullets
 
@@ -270,18 +283,18 @@ function Weapon:fire(bool)
 			CollectionService:GetTagged("Weapon");
 		}
 		-- Fire a raycast bullet to calculate actual hits
-		self.hitDetector:fire(origin, initialVelocity, gravity, self.weaponStats.range, "Blacklist", filterInstances, bullet)
+		self.hitDetector:fire(origin, initialVelocity, gravity, self.settings.range, "Blacklist", filterInstances, bullet)
 
 		-- Shove the recoil spring to make the camera shake when we shoot, using the values from this guns settings to change the amount of recoil
-		local verticalRecoil = rand:NextNumber(0.15, 0.2) * self.recoilFactor * (self.weaponStats.verticalRecoilFactor or 1)
-		local horizontalRecoil = rand:NextNumber(-0.05, 0.05) * self.recoilFactor * (self.weaponStats.horizontalRecoilFactor or 1)
-		self.springs.recoil:shove(Vector3.new(verticalRecoil, horizontalRecoil, self.weaponStats.backwardsRecoil or 1))
+		local verticalRecoil = rand:NextNumber(0.15, 0.2) * self.recoilFactor * (self.settings.verticalRecoil or 1)
+		local horizontalRecoil = rand:NextNumber(-0.05, 0.05) * self.recoilFactor * (self.settings.horizontalRecoil or 1)
+		self.springs.recoil:shove(Vector3.new(verticalRecoil, horizontalRecoil, self.settings.backwardsRecoil or 1))
 		task.spawn(function()
 			task.wait(.15)
-			self.springs.recoil:shove(Vector3.new(-verticalRecoil, -horizontalRecoil, -(self.weaponStats.backwardsRecoil or 1)))
+			self.springs.recoil:shove(Vector3.new(-verticalRecoil, -horizontalRecoil, -(self.settings.backwardsRecoil or 1)))
 		end)
 		
-		task.wait(60 / self.weaponStats.rpm)
+		task.wait(60 / self.settings.rpm)
 	end
 	
 	-- Keep firing the gun until the firing value is set to false, and ensure the function only runs once per fire
@@ -289,6 +302,7 @@ function Weapon:fire(bool)
 		self.canFire = false
 		fire()
 		self.canFire = true
+		if self.settings.weaponType == "SemiAuto" then break end
 	until not self.firing
 end
 
@@ -299,7 +313,7 @@ function Weapon:aim(bool)
 	aimWeaponEvent:FireServer(self.name, bool)
 	
 	if bool then
-		if self.isSprinting then
+		if CharacterManager.isSprinting then
 			self:sprint(false, true)
 		end
 		local tweenInfo = TweenInfo.new(.7, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
@@ -319,9 +333,9 @@ end
 -- Runs the reloading animation and resets the guns ammo
 function Weapon:reload()
 	if self.reloading or self.disabled then return end
-	if self.ammo == self.weaponStats.magCapacity or self.spareBullets <= 0 then 
-		if self.spareBullets <= 0 and self.viewmodel.Receiver:FindFirstChild("NoAmmoSound") then
-			self.viewmodel.Receiver.NoAmmoSound:Play()
+	if self.ammo == self.settings.magCapacity or self.spareBullets <= 0 then 
+		if self.spareBullets <= 0 and self.weaponHolder.Receiver:FindFirstChild("NoAmmoSound") then
+			self.weaponHolder.Receiver.NoAmmoSound:Play()
 		end
 		return 
 	end
@@ -343,29 +357,36 @@ function Weapon:reload()
 		end
 	end)
 	-- Run animation
-	self.viewmodel.Receiver.ReloadSound:Play()
+	self.weaponHolder.Receiver.ReloadSound:Play()
 	self.loadedAnimations.reload:Play()
 	task.wait(self.loadedAnimations.reload.Length)
-	local neededBullets = self.weaponStats.magCapacity - self.ammo
+	if self.disabled or not self.equipped then 
+		self.reloading = false
+		return 
+	end
+	local neededBullets = self.settings.magCapacity - self.ammo
 	local givenBullets = neededBullets
 	if neededBullets > self.spareBullets then
 		givenBullets = self.spareBullets
 	end
 	self.spareBullets -= givenBullets
-	self.spareBullets = math.clamp(self.spareBullets, 0, self.weaponStats.spareBullets)
+	self.spareBullets = math.clamp(self.spareBullets, 0, self.settings.spareBullets)
 	self.ammo += givenBullets
-	ammoChanged:Fire(self.ammo, self.spareBullets)
+	if self.equipped then
+		ammoChanged:Fire(self.ammo, self.spareBullets)
+	end
 	self.canFire = true
 	self.reloading = false
 end
 
 -- Runs the crouch animation
 function Weapon:crouch(bool)
+	if not self.equipped or self.disabled then return end
 	-- Stop sprinting
-	if bool and self.isSprinting then
+	if bool and CharacterManager.isSprinting then
 		self:sprint(false, true)
 	end
-	crouching = bool
+	CharacterManager.crouching = bool
 	if bool then
 		-- Play relevant crouching animations depending on if we are moving or not
 		if self.velocity.Magnitude > 1 then
@@ -385,12 +406,13 @@ end
 
 -- Enable / disable sprinting by chaning walkspeed and cancelling shooting and aiming
 function Weapon:sprint(bool, changeIsSprinting)
+	if not self.equipped or (self.disabled and not self.equipmentHeld) then return end
 	if not self.char or not self.char:FindFirstChild("Humanoid") then return end
 	if changeIsSprinting then
-		self.isSprinting = bool
+		CharacterManager.isSprinting = bool
 	end
 	-- Stop crouching
-	if bool and crouching then
+	if bool and CharacterManager.crouching then
 		self:crouch(false)
 	end
 	self.char.Humanoid.WalkSpeed = if bool then (self.settings.sprintSpeed or 25) else 16
@@ -399,10 +421,124 @@ function Weapon:sprint(bool, changeIsSprinting)
 	local tweenInfo = TweenInfo.new(.7, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 	local properties = {Value = tweenTo}
 	TweenService:Create(self.lerpValues.sprint, tweenInfo, properties):Play()
+	print("Lerping sprint")
 	self.sprintStance = bool
 	if not bool then return end
 	self:aim(false)
 	self:fire(false)
+end
+
+-- For this we just want to swap out the gun for the equipment and then run the relevant functions for that equipment
+function Weapon:useEquipment(handler)
+	if not handler.currentEquipment or handler.numEquipment <= 0 then return end
+	self:fire(false)
+	self:aim(false)
+	-- Disable the gun
+	self.disabled = true
+	self.equipmentHeld = true
+	-- Stop reload things
+	self.weaponHolder.Receiver.ReloadSound:Stop()
+	self.loadedAnimations.reload:Stop()
+
+	local equipment = handler.storedEquipment[handler.currentEquipment.Name]:Clone()
+	-- Load the animations for this equipment
+	local holdAnim = self.viewmodel.AnimationController:LoadAnimation(equipment.Animations.Hold)
+	local getOutAnim = self.viewmodel.AnimationController:LoadAnimation(equipment.Animations.GetOut)
+	local throwAnim = self.viewmodel.AnimationController:LoadAnimation(equipment.Animations.Throw)
+
+	-- Tween our gun away
+	local tweenInfo = TweenInfo.new(0.6, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+	TweenService:Create(self.lerpValues.equip, tweenInfo, {Value = 1}):Play()
+
+	task.wait(0.6)
+	-- Hide the gun
+	self:hide(true)
+	self.loadedAnimations.idle:Stop()
+
+	-- Bound the equipment to the viewmodels root part
+	self.viewmodel.RootPart.equipment.Part1 = equipment.WeaponRootPart
+	self.viewmodel.Left.leftHandEquipment.Part0 = equipment.WeaponRootPart
+	self.viewmodel.Right.rightHandEquipment.Part0 = equipment.WeaponRootPart
+
+	-- Parent the equipments contents to the equipment holder
+	for _, instance in pairs(equipment:GetChildren()) do
+		instance.Parent = self.equipmentHolder
+		if instance:IsA("BasePart") then
+			instance.CanCollide = false
+			instance.CastShadow = false
+		end
+	end	
+
+	-- Destroy the model
+	equipment:Destroy()
+
+	-- Tween the viewmodel back in
+	TweenService:Create(self.lerpValues.equip, tweenInfo, {Value = 0}):Play()
+	
+	-- Play the holding and getting equipment out animations 
+	holdAnim:Play()
+	getOutAnim:Play()
+
+	-- Tween the equipment offset in
+	TweenService:Create(self.lerpValues.equipmentHold, tweenInfo, {Value = 1}):Play()
+
+	-- Wait for the animation to complete
+	getOutAnim.Stopped:Wait()
+
+	-- Wait for the player to let go of the throw key
+	if handler.equipmentHeld then
+		while handler.equipmentHeld do
+			task.wait()
+		end
+	end
+
+	-- After a slight delay, run the throwing function for this equipment
+	if typeof(EquipmentFuncs[equipment.Name .. "throw"]) == "function" then
+		EquipmentFuncs[equipment.Name .. "throw"](self.equipmentHolder.Receiver, {
+			self.viewmodel.RootPart.equipment;
+			self.viewmodel.Left.leftHandEquipment;
+			self.viewmodel.Right.rightHandEquipment;
+		}, handler)
+	end
+	-- Play the throw animation
+	throwAnim:Play()
+	throwAnim.Stopped:Wait()
+	holdAnim:Stop()
+
+	-- Tween equipment offset out
+	TweenService:Create(self.lerpValues.equipmentHold, tweenInfo, {Value = 0}):Play()
+
+	-- Tween the viewmodel back out
+	TweenService:Create(self.lerpValues.equip, tweenInfo, {Value = 1}):Play()
+	task.wait(0.6)
+
+	-- Un-hide the gun
+	self:hide(false)
+	-- Play the idle animation again
+	self.loadedAnimations.idle:Play()
+
+	-- Tween viewmodel back in
+	TweenService:Create(self.lerpValues.equip, tweenInfo, {Value = 0}):Play()
+
+	-- Enable the gun
+	self.disabled = false
+	self.equipmentHeld = false
+	handler.isUsingEquipment = false
+end
+
+-- Hides or reveals the players weapon
+function Weapon:hide(bool)
+	if not self.savedTransparencies then
+		self.savedTransparencies = {}
+	end
+	for _, part in pairs(self.weaponHolder:GetDescendants()) do
+		if part:IsA("BasePart") then
+			if bool then
+				self.savedTransparencies[part] = part.Transparency
+			end
+			part.Transparency = (bool and 1) or self.savedTransparencies[part]
+		end
+	end
 end
 
 -- Connects the relevant inputs using the Keybinds module
@@ -435,42 +571,6 @@ function Weapon:connectInput()
 		}, true)
 	end
 
-	-- Connect using equipment inputs
-	for bindNum, keybind in pairs(Keybinds.UseEquipment) do
-		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
-		UserInput.connectInput(inputType, keybind, "UseEquipment" .. bindNum, {
-			beganFunc = function()
-				print("Hold equipment")
-			end;
-			endedFunc = function()
-				print("Use equipment")
-			end;
-		}, true)
-	end
-
-	-- Connect the sprint inputs
-	for bindNum, keybind in pairs(Keybinds.Sprint) do
-		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
-		UserInput.connectInput(inputType, keybind, "Sprint" .. bindNum, {
-			beganFunc = function()
-				self:sprint(true, true)
-			end;
-			endedFunc = function()
-				self:sprint(false, true)
-			end;
-		}, true)
-	end
-
-	-- Connect the crouch inputs
-	for bindNum, keybind in pairs(Keybinds.Crouch) do
-		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
-		UserInput.connectInput(inputType, keybind, "Crouch" .. bindNum, {
-			beganFunc = function()
-				self:crouch(not crouching)
-			end;
-		}, true)
-	end
-
 	-- Connect the reload inputs 
 	for bindNum, keybind in pairs(Keybinds.Reload) do
 		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
@@ -496,24 +596,6 @@ function Weapon:disconnectInput()
 		UserInput.disconnectInput(inputType, "AimWeapon")
 	end
 
-	-- Disconnect using equipment inputs
-	for _, keybind in pairs(Keybinds.UseEquipment) do
-		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
-		UserInput.disconnectInput(inputType, "UseEquipment")
-	end
-
-	-- Disconnect the sprint inputs
-	for _, keybind in pairs(Keybinds.Sprint) do
-		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
-		UserInput.disconnectInput(inputType, "Sprint")
-	end
-
-	-- Disconnect the crouch inputs
-	for bindNum, keybind in pairs(Keybinds.Crouch) do
-		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
-		UserInput.disconnectInput(inputType, "Crouch" .. bindNum)
-	end
-
 	-- Disconnect the reload inputs 
 	for bindNum, keybind in pairs(Keybinds.Reload) do
 		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
@@ -521,12 +603,40 @@ function Weapon:disconnectInput()
 	end
 end
 
+-- Connects the listeners for this weapon
+function Weapon:connectListeners()
+	-- Connect a listener to the hit event so we can do damage etc
+	self.maid:GiveTask(self.hitDetector.hitEvent.Event:Connect(function(part)
+		-- Could add a particle effect here to add blood splatters etc
+		if part.Parent and part.Parent:FindFirstChild("Humanoid") and part.Parent.Humanoid.Health > 0 then
+			-- Fire a bindable to tell the UI to show hitmarkers
+			hitPlayerEvent:Fire(part)
+			playerHitEvent:FireServer(self.name, 1, part)
+		end
+	end))
+
+	-- Connect a listener to the crouch event
+	self.maid:GiveTask(crouchEvent.Event:Connect(function(bool)
+		self:crouch(bool)
+	end))
+
+	-- Connect a listener to the crouch event
+	self.maid:GiveTask(sprintEvent.Event:Connect(function(bool)
+		self:sprint(bool, true)
+	end))
+end
+
+-- Disconnects the listeners for this weapon
+function Weapon:disconnectListeners()
+	self.maid:DoCleaning()
+end
+
 -- Loads the animations and stores them in the object
 function Weapon:loadAnimations()
 	-- Could add a jump animation too for more immersion, I won't for now because of time
-	self.loadedAnimations.idle = self.viewmodel.AnimationController:LoadAnimation(self.viewmodel.Animations.Idle)
-	self.loadedAnimations.aim = self.viewmodel.AnimationController:LoadAnimation(self.viewmodel.Animations.Aim)
-	self.loadedAnimations.reload = self.viewmodel.AnimationController:LoadAnimation(self.viewmodel.Animations.Reload)
+	self.loadedAnimations.idle = self.viewmodel.AnimationController:LoadAnimation(self.weaponHolder.Animations.Idle)
+	self.loadedAnimations.aim = self.viewmodel.AnimationController:LoadAnimation(self.weaponHolder.Animations.Aim)
+	self.loadedAnimations.reload = self.viewmodel.AnimationController:LoadAnimation(self.weaponHolder.Animations.Reload)
 	if not self.char or not self.char:FindFirstChild("Humanoid") then return end
 	self.loadedAnimations.crouchIdle = self.char.Humanoid.Animator:LoadAnimation(Players.LocalPlayer.Backpack.Animations.CrouchIdle)
 	self.loadedAnimations.crouchMoving = self.char.Humanoid.Animator:LoadAnimation(Players.LocalPlayer.Backpack.Animations.CrouchMoving)
@@ -548,33 +658,35 @@ function Weapon:update(dt)
 		end
 
 		-- Cancel out the sprint stance if we are not moving or are moving backwards
-		if self.isSprinting and (math.abs(self.velocity.Magnitude) < 1 or (math.abs(forwardBackDir) > 0.1 and forwardBackDir < 0.1)) and self.sprintStance then
+		if CharacterManager.isSprinting and (math.abs(self.velocity.Magnitude) < 1 or (math.abs(forwardBackDir) > 0.1 and forwardBackDir < 0.1)) and self.sprintStance then
 			self:sprint(false)
-		elseif self.isSprinting and (math.abs(self.velocity.Magnitude) > 1 and math.abs(forwardBackDir) > 0.1 and forwardBackDir > 0.1) and not self.sprintStance then
+		elseif CharacterManager.isSprinting and (math.abs(self.velocity.Magnitude) > 1 and math.abs(forwardBackDir) > 0.1 and forwardBackDir > 0.1) and not self.sprintStance then
 			self:sprint(true)
 		end
 
 		-- Change crouch animation when we stop/start moving
-		if crouching and self.velocity.Magnitude > 1 and self.loadedAnimations.crouchIdle.IsPlaying then
+		if CharacterManager.crouching and self.velocity.Magnitude > 1 and self.loadedAnimations.crouchIdle.IsPlaying then
 			self.loadedAnimations.crouchIdle:Stop()
 			self.loadedAnimations.crouchMoving:Play(nil, nil, 0.7)
-		elseif crouching and self.velocity.Magnitude < 1 and self.loadedAnimations.crouchMoving.IsPlaying then
+		elseif CharacterManager.crouching and self.velocity.Magnitude < 1 and self.loadedAnimations.crouchMoving.IsPlaying then
 			self.loadedAnimations.crouchMoving:Stop()
 			self.loadedAnimations.crouchIdle:Play()
 		end
 
 		-- Add the aim offset to the final offset
-		local idleOffset = self.viewmodel.Offsets.Idle.Value --* CFrame.Angles(xTilt * ((movementDirection.X > 0 and 1) or -1), 0, zTilt * ((movementDirection.Z > 0 and 1) or -1))
-		local aimOffset = idleOffset:lerp(self.viewmodel.Offsets.Aim.Value, self.lerpValues.aim.Value)
+		local idleOffset = self.weaponHolder.Offsets.Idle.Value --* CFrame.Angles(xTilt * ((movementDirection.X > 0 and 1) or -1), 0, zTilt * ((movementDirection.Z > 0 and 1) or -1))
+		local aimOffset = idleOffset:lerp(self.weaponHolder.Offsets.Aim.Value, self.lerpValues.aim.Value)
 		-- Only want the sprint offset to apply if we are actually sprinting
-		local sprintOffset = aimOffset:lerp(self.viewmodel.Offsets.Sprint.Value, self.lerpValues.sprint.Value)
+		local sprintOffset = aimOffset:lerp(self.weaponHolder.Offsets.Sprint.Value, self.lerpValues.sprint.Value)
+		-- Add equipment offsets for if we are holding equipment
+		local equipmentOffset = if self.equipmentHolder:FindFirstChild("Offsets") then sprintOffset:lerp(self.equipmentHolder.Offsets.Hold.Value, self.lerpValues.equipmentHold.Value) else sprintOffset
 		-- Apply the equipping offset
-		local equipOffset = sprintOffset:lerp(self.viewmodel.Offsets.Equip.Value, self.lerpValues.equip.Value)
+		local equipOffset = equipmentOffset:lerp(self.weaponHolder.Offsets.Equip.Value, self.lerpValues.equip.Value)
 		local finalOffset = equipOffset
 
 		-- Allows us to reduce the players walkspeed by changing the walkspeed lerp value while we are aiming
 		local backwardsReduction = if not self.aiming and forwardBackDir < 0 then 4 else 0
-		if not self.isSprinting then
+		if not CharacterManager.isSprinting then
 			local aimWalkspeed = self.settings.aimWalkspeed or 6
 			-- Reduce walkspeed if we are walking backwards
 			self.char.Humanoid.WalkSpeed = 16 - ((16 - aimWalkspeed) * self.lerpValues.walkspeed.Value) - backwardsReduction
@@ -589,7 +701,7 @@ function Weapon:update(dt)
 		
 		local frequency = 1
 		local amplitude = 0.1
-		local sprintAddition = self.isSprinting and 1.4 or 1
+		local sprintAddition = CharacterManager.isSprinting and 1.4 or 1
 		local movementSway = Vector3.new(
 			Maths.getSine(amplitude, frequency * 7 * sprintAddition), 
 			Maths.getSine(amplitude, frequency * 14 * sprintAddition), 
@@ -621,7 +733,7 @@ function Weapon:update(dt)
 		end
 
 		-- Less recoil when we're aiming
-		self.recoilFactor = if self.aiming then self.weaponStats.aimRecoilFactor else 1
+		self.recoilFactor = if self.aiming then self.settings.aimRecoilFactor else 1
 
 		-- Apply all of these movements to the viewmodels CFrame
 		self.viewmodel.RootPart.CFrame = self.camera.CFrame:ToWorldSpace(finalOffset) * CFrame.Angles(0, math.pi, 0)

@@ -11,11 +11,15 @@ local aimWeaponEvent = getDataStream("AimWeapon", "RemoteEvent")
 local playerHitEvent = getDataStream("PlayerHit", "RemoteEvent")
 local equipWeaponFunc = getDataStream("EquipWeapon", "RemoteFunction")
 local reloadWeaponFunc = getDataStream("ReloadWeapon", "RemoteFunction")
+local playerKilledEvent = getDataStream("LocalPlayerKilled", "BindableEvent")
 
 local WeaponKits = loadModule("WeaponKits")
 local BulletRender = loadModule("BulletRender")
+local Weapon = loadModule("Weapon")
+local Keybinds = loadModule("Keybinds")
+local UserInput = loadModule("UserInput")
 
-local playerKilledEvent = getDataStream("LocalPlayerKilled", "BindableEvent")
+local setInterfaceState = RunService:IsClient() and getDataStream("SetInterfaceState", "BindableEvent")
 
 local gravity = Vector3.new(0, workspace.Gravity, 0)
 
@@ -24,6 +28,7 @@ local WeaponHandler = {
 	players = {};
 }
 
+-- SERVER FUNCTIONS --
 function WeaponHandler:initiate()
 	if RunService:IsClient() then return end
 	task.spawn(function()
@@ -46,10 +51,14 @@ function WeaponHandler.setEquippedKit(player, kit)
 		end
 
 		-- Clone gun and save it in the players table
-		local weapon = ReplicatedStorage.Assets.Weapons[WeaponKits[kit].Weapons.Primary]:Clone()
-		local weaponSettings = require(weapon.Settings)
+		local primaryWeapon = ReplicatedStorage.Assets.Weapons[WeaponKits[kit].Weapons.Primary]:Clone()
+		local secondaryWeapon = ReplicatedStorage.Assets.Weapons[WeaponKits[kit].Weapons.Secondary]:Clone()
+		local primaryWeaponSettings = require(primaryWeapon.Settings)
+		local secondaryWeaponSettings = require(secondaryWeapon.Settings)
 
-		CollectionService:AddTag(weapon, "Weapon")
+		-- Don't want bullets to hit these 
+		CollectionService:AddTag(primaryWeapon, "Weapon")
+		CollectionService:AddTag(secondaryWeapon, "Weapon")
 
 		-- Could add code here to edit settings for the gun (larger or more magazines etc)
 		
@@ -58,26 +67,47 @@ function WeaponHandler.setEquippedKit(player, kit)
 			equipped = "primary";
 			weapons = {
 				primary = {
-					model = weapon;
-					settings = weaponSettings;
+					model = primaryWeapon;
+					settings = primaryWeaponSettings;
 					magData = {
-						ammo = weaponSettings.weaponStats.magCapacity;
-						spare = weaponSettings.weaponStats.spareBullets;
+						ammo = primaryWeaponSettings.magCapacity;
+						spare = primaryWeaponSettings.spareBullets;
+					};
+				};
+				secondary = {
+					model = secondaryWeapon;
+					settings = secondaryWeaponSettings;
+					magData = {
+						ammo = secondaryWeaponSettings.magCapacity;
+						spare = secondaryWeaponSettings.spareBullets;
 					};
 				};
 			};
 		}
 		
 		if player.Character then
-			-- Attach the secondary gun to the player
-			weapon.Parent = player.Character
-			weapon.Receiver:WaitForChild("BackWeld").Part0 = player.Character:WaitForChild("UpperTorso")
+			-- Attach the primary gun to the player
+			primaryWeapon.Parent = player.Character
+			primaryWeapon.Receiver:WaitForChild("BackWeld").Part0 = nil
+			primaryWeapon.Receiver:WaitForChild("WeaponHold").Part0 = player.Character["RightHand"]
 			-- Load the server animations for the weapons
 			WeaponHandler.players[tostring(player.UserId)].weapons.primary.loadedAnimations = {
-				idle = player.Character.Humanoid:LoadAnimation(weapon.ServerAnimations.Idle);
-				aim = player.Character.Humanoid:LoadAnimation(weapon.ServerAnimations.Aim);
-				aimFire = player.Character.Humanoid:LoadAnimation(weapon.ServerAnimations.AimFire);
-				idleFire = player.Character.Humanoid:LoadAnimation(weapon.ServerAnimations.HipFire);
+				idle = player.Character.Humanoid:LoadAnimation(primaryWeapon.ServerAnimations.Idle);
+				aim = player.Character.Humanoid:LoadAnimation(primaryWeapon.ServerAnimations.Aim);
+				aimFire = player.Character.Humanoid:LoadAnimation(primaryWeapon.ServerAnimations.AimFire);
+				idleFire = player.Character.Humanoid:LoadAnimation(primaryWeapon.ServerAnimations.HipFire);
+			};
+
+			-- Attach the secondary gun to the player
+			secondaryWeapon.Parent = player.Character
+			secondaryWeapon.Receiver:WaitForChild("WeaponHold").Part0 = nil
+			secondaryWeapon.Receiver:WaitForChild("BackWeld").Part0 = player.Character:WaitForChild("UpperTorso")
+			-- Load the server animations for the weapons
+			WeaponHandler.players[tostring(player.UserId)].weapons.secondary.loadedAnimations = {
+				idle = player.Character.Humanoid:LoadAnimation(secondaryWeapon.ServerAnimations.Idle);
+				aim = player.Character.Humanoid:LoadAnimation(secondaryWeapon.ServerAnimations.Aim);
+				aimFire = player.Character.Humanoid:LoadAnimation(secondaryWeapon.ServerAnimations.AimFire);
+				idleFire = player.Character.Humanoid:LoadAnimation(secondaryWeapon.ServerAnimations.HipFire);
 			};
 
 			return true
@@ -106,7 +136,12 @@ function WeaponHandler.equipWeapon(player, weapon, bool)
 	if not hasWeapon or not player.Character then return end
 	if bool then
 		-- Set the players equipped gun to either primary or secondary
-		playersVals.equipped = if playersVals.weapons.primary.model.Name == weapon then "primary" else "secondary"
+		for weaponNum, weaponInfo in pairs(playersVals.weapons) do
+			if weaponInfo.model.Name == weapon then
+				playersVals.equipped = weaponNum
+				break
+			end
+		end
 	end
 	
 	-- Check if the current equipped weapon exists or not
@@ -139,13 +174,13 @@ function WeaponHandler.reloadWeapon(player, weapon, clientAmmo, clientSpare)
 	local weaponData = playersVals.weapons[playersVals.equipped]
 	local weaponAmmoData = weaponData.magData
 	if weaponAmmoData.ammo ~= clientAmmo or weaponAmmoData.spare ~= clientSpare then return end
-	local neededBullets = weaponData.settings.weaponStats.magCapacity - weaponAmmoData.ammo
+	local neededBullets = weaponData.settings.magCapacity - weaponAmmoData.ammo
 	local givenBullets = neededBullets
 	if neededBullets > weaponAmmoData.spare then
 		givenBullets = weaponAmmoData.spare
 	end
 	weaponAmmoData.spare -= givenBullets
-	weaponAmmoData.spare = math.clamp(weaponAmmoData.spare, 0, weaponData.settings.weaponStats.spareBullets)
+	weaponAmmoData.spare = math.clamp(weaponAmmoData.spare, 0, weaponData.settings.spareBullets)
 	weaponAmmoData.ammo += givenBullets
 	return true
 end
@@ -185,13 +220,78 @@ end
 function WeaponHandler.playerHit(player, weapon, bulletNum, hitPart)
 	if hitPart.Parent and hitPart.Parent:FindFirstChild("Humanoid") and hitPart.Parent.Humanoid.Health > 0 then--and Players:FindFirstChild(hitPart.Parent.Name) then
 		local playersVals = WeaponHandler.players[tostring(player.UserId)]
-		local weaponsStats = playersVals.weapons[playersVals.equipped].settings.weaponStats
+		local weaponsStats = playersVals.weapons[playersVals.equipped].settings
 		local damage = (hitPart.Name == "Head" and weaponsStats.headshot) or weaponsStats.damage
 		hitPart.Parent.Humanoid:TakeDamage(damage)
 		if hitPart.Parent.Humanoid.Health <= 0 then
 			playerKilledEvent:Fire(player, Players:FindFirstChild(hitPart.Parent.Name), weapon)
 		end
 	end
+end
+
+
+-- CLIENT FUNCTIONS --
+
+-- Creates the weapon objects and sets up the input to equip them
+function WeaponHandler:setupWeapons(kit)
+	if RunService:IsServer() then return end
+	if not self.weaponObjects then
+		self.weaponObjects = {}
+	end
+	self.isUsingEquipment = false
+
+	-- Collect our equipment models (support for multiple equipment per kit, but not implemented switching between equipments)
+	self.storedEquipment = {}
+	for _, equipmentInfo in pairs(WeaponKits[kit].Equipment) do
+		self.storedEquipment[equipmentInfo.Name] = ReplicatedStorage.Assets.Equipment:FindFirstChild(equipmentInfo.Name)
+	end
+	self.currentEquipment = WeaponKits[kit].Equipment[1]
+	self.numEquipment = self.currentEquipment.Amount
+
+	for weaponNum, weapon in pairs(WeaponKits[kit].Weapons) do
+		local weaponObj = Weapon.new(weapon, self)
+		self.weaponObjects[weaponNum] = weaponObj
+
+		-- Connects all the inputs from keybinds module to equip this weapon
+		for bindNum, keybind in ipairs(Keybinds["Equip" .. weaponNum]) do
+			local inputType = (keybind.EnumType == Enum.UserInputType and keybind) or Enum.UserInputType.Keyboard
+			local keyCode = keybind.EnumType == Enum.KeyCode and keybind
+			UserInput.connectInput(inputType, keyCode, "EquipWeapon" .. weaponNum .. bindNum, {
+				endedFunc = function()
+					if not weaponObj.equipped and not self.isUsingEquipment then
+						local otherWeapon = weaponNum == "Primary" and "Secondary" or "Primary"
+						self.weaponObjects[otherWeapon]:unequip()
+						weaponObj:equip(true)
+						self.equipped = weaponNum
+					end
+				end;
+			}, true)
+		end
+
+		if weaponNum == "Primary" then
+			weaponObj:equip(true)
+		end
+		self.equipped = "Primary"
+	end
+
+	-- Connect using equipment inputs
+	for bindNum, keybind in pairs(Keybinds.UseEquipment) do
+		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
+		UserInput.connectInput(inputType, keybind, "UseEquipment" .. bindNum, {
+			beganFunc = function()
+				if not self.isUsingEquipment then
+					self.isUsingEquipment = true
+					self.equipmentHeld = true
+					self.weaponObjects[self.equipped]:useEquipment(self)
+					self.isUsingEquipment = false
+				end
+			end;
+			endedFunc = function()
+				self.equipmentHeld = false
+			end;
+		}, true)
+	end
+	setInterfaceState:Fire("inGame")
 end
 
 -- Function which is called when another player shoots their gun and we want to replicate their bullets

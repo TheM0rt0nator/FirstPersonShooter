@@ -11,9 +11,7 @@ local UICorner = loadModule("UICorner")
 local KitInfoFrame = loadModule("KitInfoFrame")
 local KitButtonTemplate = loadModule("KitButtonTemplate")
 local WeaponKits = loadModule("WeaponKits")
-local Weapon = loadModule("Weapon")
-local UserInput = loadModule("UserInput")
-local Keybinds = loadModule("Keybinds")
+local WeaponHandler = loadModule("WeaponHandler")
 
 local camera = workspace.CurrentCamera
 
@@ -34,29 +32,6 @@ function KitSelection:init()
 			currentKit = "Assault";
 		})
 	end)
-end
-
--- Creates the weapon objects and sets up the input to equip them
-function KitSelection:setupWeapons()
-	for weaponNum, weapon in pairs(WeaponKits[self.state.currentKit].Weapons) do
-		local newWeapon = Weapon.new(weapon)
-
-		-- Connects all the inputs from keybinds module to equip this weapon
-		for bindNum, keybind in ipairs(Keybinds["Equip" .. weaponNum]) do
-			local inputType = (keybind.EnumType == Enum.UserInputType and keybind) or Enum.UserInputType.Keyboard
-			local keyCode = keybind.EnumType == Enum.KeyCode and keybind
-			UserInput.connectInput(inputType, keyCode, "EquipWeapon" .. weaponNum .. bindNum, {
-				endedFunc = function()
-					newWeapon:equip(not newWeapon.equipped)
-				end;
-			}, true)
-		end
-
-		if weaponNum == "Primary" then
-			newWeapon:equip(true)
-		end
-	end
-	setInterfaceState:Fire("inGame")
 end
 
 -- Render the UI
@@ -167,7 +142,7 @@ function KitSelection:render()
 						self.setButtonText("DEPLOYING")
 						local success = spawnPlayerFunc:InvokeServer(self.state.currentKit)
 						if success then
-							self:setupWeapons()
+							WeaponHandler:setupWeapons(self.state.currentKit)
 							camera.CameraType = Enum.CameraType.Custom
 						end
 						task.wait(3)

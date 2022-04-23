@@ -328,7 +328,7 @@ function WeaponHandler:setupWeapons(kit)
 						local otherWeapon = weaponNum == "Primary" and "Secondary" or "Primary"
 						self.weaponObjects[otherWeapon]:unequip()
 						task.wait(.3)
-						weaponObj:equip(true)
+						weaponObj:equip(true, self)
 						self.equipped = weaponNum
 					end
 				end;
@@ -336,9 +336,29 @@ function WeaponHandler:setupWeapons(kit)
 		end
 
 		if weaponNum == "Primary" then
-			weaponObj:equip(true)
+			weaponObj:equip(true, self)
 		end
 		self.equipped = "Primary"
+	end
+
+	-- Connect input for switching weapons (with scroll wheel)
+	for bindNum, keybind in ipairs(Keybinds["SwitchWeapons"]) do
+		local inputType = (keybind.EnumType == Enum.UserInputType and keybind) or Enum.UserInputType.Keyboard
+		local keyCode = keybind.EnumType == Enum.KeyCode and keybind
+		UserInput.connectInput(inputType, keyCode, "SwitchWeapons" .. bindNum, {
+			endedFunc = function()
+				local switchFrom = self.equipped
+				local switchTo = switchFrom == "Primary" and "Secondary" or "Primary"
+				local fromWeaponObj = self.weaponObjects[switchFrom]
+				local toWeaponObj = self.weaponObjects[switchTo]
+				if not toWeaponObj.equipped and not self.isUsingEquipment then
+					fromWeaponObj:unequip()
+					task.wait(.3)
+					toWeaponObj:equip(true, self)
+					self.equipped = switchTo
+				end
+			end;
+		}, true)
 	end
 
 	-- Connect using equipment inputs

@@ -4,11 +4,11 @@ return {
 	Assault = {
 		Weapons = {
 			Primary = "M4A1";
-			Secondary = "Desert Eagle";
+			Secondary = "M1911A1";
 		};
 		Equipment = {
 			{
-				Name = "M62";
+				Name = "Frag Grenade";
 				Amount = 2;
 			};
 		};
@@ -17,11 +17,11 @@ return {
 	Support = {
 		Weapons = {
 			Primary = "AK47";
-			Secondary = "M1911A1";
+			Secondary = "Desert Eagle";
 		};
 		Equipment = {
 			{
-				Name = "Flare";
+				Name = "Flashbang";
 				Amount = 2;
 			};
 		};

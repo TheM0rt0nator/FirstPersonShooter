@@ -9,7 +9,8 @@ local spawnPlayerFunc = getDataStream("SpawnPlayerFunc", "RemoteFunction")
 
 local updateLeaderboardUI = getDataStream("UpdateLeaderboardUI", "RemoteEvent")
 local playerKilledRemote = getDataStream("PlayerKilled", "RemoteEvent")
-local gameOverEvent = getDataStream("GameOverEvent", "BindableEvent")
+local gameOverEvent = getDataStream("GameOverEvent", "RemoteEvent")
+local localGameOverEvent = getDataStream("LocalGameOverEvent", "BindableEvent")
 local playerKilledEvent = getDataStream("LocalPlayerKilled", "BindableEvent")
 
 local MapHandler = loadModule("MapHandler")
@@ -57,12 +58,15 @@ function MainGameLoop:initiate()
 			self.gameStatus.Value = "GameRunning"
 
 			-- Do game stuff
-			gameOverEvent.Event:Wait()
+			local winner = localGameOverEvent.Event:Wait()
 
+			gameOverEvent:FireAllClients(winner)
 			-- Tell all players to display the winners, then if anyone new joins, they can just wait for gameStatus to change back to choosing map
 			self.gameStatus.Value = "GameOver"
 			self.currentMode = nil
 			self.currentGamemode.Value = ""
+
+			task.wait(5)
 
 			Leaderboard:clearScores()
 			-- Unload the map

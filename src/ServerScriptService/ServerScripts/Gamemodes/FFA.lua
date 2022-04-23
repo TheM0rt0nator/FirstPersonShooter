@@ -5,13 +5,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
-local gameOverEvent = getDataStream("GameOverEvent", "BindableEvent")
+local gameOverEvent = getDataStream("LocalGameOverEvent", "BindableEvent")
 
 local Leaderboard = loadModule("Leaderboard")
 
 local FFA = {
 	name = "FFA";
-	killGoal = 25;
+	killGoal = 1;
 	-- Added a roundType value incase a gamemode is time-based rather than kill-based
 	roundType = "Kills";
 }
@@ -23,7 +23,7 @@ function FFA:playerKilled(killer, victim, weapon)
 		kills = (Leaderboard.playerScores[tostring(killer.UserId)] and Leaderboard.playerScores[tostring(killer.UserId)].Kills) or 0;
 	})
 	if gameOver then
-		gameOverEvent:Fire()
+		gameOverEvent:Fire(killer.Name)
 	end
 end
 

@@ -26,8 +26,8 @@ function HitMarkers:init()
 		if viewmodel then
 			-- Hit marker sound; can change the sound depending on if it is a headshot or not - not great sound design here but have limited time
 			task.delay(.1, function()
-				local sound = viewmodel.Receiver.HitSound:Clone()
-				sound.Parent = viewmodel.Receiver
+				local sound = viewmodel.WeaponHolder.Receiver.HitSound:Clone()
+				sound.Parent = viewmodel.WeaponHolder.Receiver
 				if headshot then
 					sound:FindFirstChild("EqualizerSoundEffect").LowGain = 2
 				end

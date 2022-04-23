@@ -20,7 +20,7 @@ local EquipmentFuncs = {}
 
 local GRENADE_TIMER = 4
 
--- When we throw the M62, just set it's velocity, wait a certain time and then explode and find the players near it
+-- When we throw the M62, just set it's velocity, wait a certain time and then explode and find the players near it (this function also support replication)
 function EquipmentFuncs.M62throw(args)
 	local settings = require(m62:FindFirstChild("Settings"))
 	-- If we have a handler, that means this is the client that threw the grenade, and we don't want to invoke the server on replicated clients
@@ -100,7 +100,6 @@ function EquipmentFuncs.M62throw(args)
 					-- Raycast so you can't be hurt by grenades through walls
 					local rayDirection = (player.Character.PrimaryPart.Position - explosion.Position).Unit
 					local raycastResult = Raycast.new(ignoreList, "Blacklist", explosion.Position, rayDirection, dist * 1.5)
-					Raycast.showRayAsPart(explosion.Position, rayDirection, dist * 1.5, workspace)
 					if not raycastResult or raycastResult.Instance.Parent ~= player.Character then continue end
 					table.insert(hitPlayers, {
 						player = player;

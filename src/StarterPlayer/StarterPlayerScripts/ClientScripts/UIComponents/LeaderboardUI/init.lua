@@ -4,6 +4,7 @@ local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framewo
 
 local updateLeaderboardUI = getDataStream("UpdateLeaderboardUI", "RemoteEvent")
 local playerKilledRemote = getDataStream("PlayerKilled", "RemoteEvent")
+local gameOverEvent = getDataStream("GameOverEvent", "RemoteEvent")
 
 local Roact = loadModule("Roact")
 local Maid = loadModule("Maid")
@@ -20,9 +21,12 @@ function Leaderboard:init()
 	self.maid = Maid.new()
 	self.enabled, self.setEnabled = Roact.createBinding(false)
 	self.canvasSize, self.setCanvasSize = Roact.createBinding(UDim2.new(0, 0, 0, 0))
+	self.winnerText, self.setWinnerText = Roact.createBinding("")
 	self.roundType = ReplicatedStorage:WaitForChild("GameValues"):WaitForChild("RoundType")
+	self.gameStatus = ReplicatedStorage.GameValues:WaitForChild("GameStatus")
 	UserInput.connectInput(Enum.UserInputType.Keyboard, Enum.KeyCode.Tab, "Leaderboard", {
 		beganFunc = function()
+			if self.gameStatus.Value ~= "GameRunning" then return end
 			-- Only let leaderboard open if we are in correct UI state
 			if self.props.visible:getValue() then
 				self.setEnabled(not self.enabled:getValue())
@@ -40,6 +44,13 @@ function Leaderboard:init()
 		if self.mounted then
 			self:setState({})
 		end
+	end))
+	self.maid:GiveTask(gameOverEvent.OnClientEvent:Connect(function(winner)
+		self.setWinnerText(winner .. " wins!")
+		self.setEnabled(true)
+		task.wait(5)
+		self.setWinnerText("")
+		self.setEnabled(false)
 	end))
 end
 
@@ -164,6 +175,22 @@ function Leaderboard:render()
 			}, {
 				UICorner = UICorner(1, 0);
 			});
+
+			Winner = Roact.createElement("TextLabel", {
+				FontSize = Enum.FontSize.Size14;
+				TextColor3 = Color3.new(1, 1, 1);
+				Text = self.winnerText;
+				Name = "Winner";
+				TextStrokeTransparency = 0.6000000238418579;
+				AnchorPoint = Vector2.new(0.5, 0);
+				Font = Enum.Font.Oswald;
+				BackgroundTransparency = 1;
+				Position = UDim2.new(0.5, 0, -0.124, 0);
+				Size = UDim2.new(1, 0, 0.124, 0);
+				TextScaled = true;
+				BackgroundColor3 = Color3.new(1, 1, 1);
+			})
+			
 		});
 	})
 end

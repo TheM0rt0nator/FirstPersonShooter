@@ -215,6 +215,8 @@ function EquipmentFuncs.Flashbangthrow(args)
 			newSoundPart.Transparency = 1
 			newSoundPart.Parent = workspace	
 			primaryPart:FindFirstChild("ExplodeSound").Parent = newSoundPart
+			newSoundPart.ExplodeSound:Play()
+			newSoundPart.ExplodeSound.TimePosition = 0.4
 			-- Emit particles for flashbang
 			for _, particle in pairs(newGrenade.Main:GetChildren()) do
 				if particle:IsA("ParticleEmitter") then
@@ -222,9 +224,7 @@ function EquipmentFuncs.Flashbangthrow(args)
 					particle:Emit(particle.Rate)
 				end
 			end
-			newSoundPart.ExplodeSound:Play()
 			newGrenade:Destroy()
-			task.wait(0.4)
 			flashbangEvent:Fire(primaryPart.Position, newGrenade, newSoundPart)
 			task.delay(5, function()
 				newSoundPart:Destroy()

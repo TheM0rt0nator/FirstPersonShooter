@@ -45,12 +45,14 @@ function Leaderboard:init()
 			self:setState({})
 		end
 	end))
-	self.maid:GiveTask(gameOverEvent.OnClientEvent:Connect(function(winner)
-		self.setWinnerText(winner .. " wins!")
-		self.setEnabled(true)
-		task.wait(5)
-		self.setWinnerText("")
-		self.setEnabled(false)
+	self.maid:GiveTask(gameOverEvent.OnClientEvent:Connect(function(type, winner)
+		if type == "ShowLeaderboard" then
+			self.setWinnerText(winner .. " wins!")
+			self.setEnabled(true)
+		elseif type == "UnloadingMap" then
+			self.setWinnerText("")
+			self.setEnabled(false)
+		end
 	end))
 end
 

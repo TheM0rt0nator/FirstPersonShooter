@@ -1,3 +1,4 @@
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
@@ -144,6 +145,8 @@ function KitSelection:render()
 						if success then
 							WeaponHandler:setupWeapons(self.state.currentKit)
 							camera.CameraType = Enum.CameraType.Custom
+							camera.CameraSubject = Players.LocalPlayer.Character:WaitForChild("Humanoid")
+							self.setButtonText("DEPLOY")
 						end
 						task.wait(3)
 						self.debounce = false

@@ -1,4 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
@@ -9,6 +10,8 @@ local Maid = loadModule("Maid")
 local KillFeedTile = loadModule("KillFeedTile")
 
 local KillFeed = Roact.Component:extend("KillFeed")
+
+local player = Players.LocalPlayer
 
 local TILE_EXPIRE_TIME = 10
 local DISPLAY_TIME = 3.5
@@ -53,15 +56,17 @@ end
 
 -- Start a timer to hide the kill feed after, which can be topped up if another kill happens
 function KillFeed:startTimer()
-	while self.timer > 0 do
-		self.timer -= 0.01
-		if self.timer <= 0.5 then
-			-- Could add a fading out effect here 
+	task.spawn(function()
+		while self.timer > 0 do
+			self.timer -= 0.01
+			if self.timer <= 0.5 then
+				-- Could add a fading out effect here 
+			end
+			task.wait()
 		end
-		task.wait()
-	end
-	self.setVisible(false)
-	self.timerStarted = false
+		self.setVisible(false)
+		self.timerStarted = false
+	end)
 end
 
 function KillFeed:render()

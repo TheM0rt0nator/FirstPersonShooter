@@ -10,6 +10,8 @@ local Maid = loadModule("Maid")
 local MainInterface = Roact.Component:extend("MainInterface")
 
 local Components = {
+	DiedNotification = loadModule("DiedNotification");
+	FlashbangCover = loadModule("FlashbangCover");
 	HitMarkers = loadModule("HitMarkers");
 	HUD = loadModule("HUD");
 	KillFeed = loadModule("KillFeed");
@@ -23,6 +25,8 @@ local InterfaceStates = {
 		"KitSelection";
 	};
 	inGame = {
+		"DiedNotification";
+		"FlashbangCover";
 		"HitMarkers";
 		"HUD";
 		"KillFeed";

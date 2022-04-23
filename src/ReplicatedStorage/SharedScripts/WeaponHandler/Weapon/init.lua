@@ -91,7 +91,7 @@ function Weapon.new(name, handler, equipment)
 end
 
 -- Equip the weapon
-function Weapon:equip(bool)
+function Weapon:equip(bool, handler)
 	if self.disabled then return end
 	if not bool then self:unequip() return end
 
@@ -164,7 +164,7 @@ function Weapon:equip(bool)
 	end
 
 	-- Fire these bindables to change the HUD
-	ammoChanged:Fire(self.ammo, self.spareBullets)
+	ammoChanged:Fire(self.ammo, self.spareBullets, handler.currentEquipment.Name, handler.numEquipment)
 	weaponChanged:Fire(self.name)
 
 	-- Connect inputs
@@ -281,6 +281,7 @@ function Weapon:fire(bool)
 			self.char; 
 			CollectionService:GetTagged("Accessory");
 			CollectionService:GetTagged("Weapon");
+			CollectionService:GetTagged("Foliage");
 		}
 		-- Fire a raycast bullet to calculate actual hits
 		self.hitDetector:fire(origin, initialVelocity, gravity, self.settings.range, "Blacklist", filterInstances, bullet)
@@ -503,6 +504,9 @@ function Weapon:useEquipment(handler)
 	end
 	
 	handler.numEquipment -= 1
+
+	-- Tell UI to re-render
+	ammoChanged:Fire(self.ammo, self.spareBullets, handler.currentEquipment.Name, handler.numEquipment)
 
 	-- After a slight delay, run the throwing function for this equipment
 	if typeof(EquipmentFuncs[equipment.Name .. "throw"]) == "function" then

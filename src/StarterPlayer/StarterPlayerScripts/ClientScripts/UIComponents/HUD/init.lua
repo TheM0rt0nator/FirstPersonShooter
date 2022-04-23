@@ -14,6 +14,7 @@ local Roact = loadModule("Roact")
 local Maid = loadModule("Maid")
 local UICorner = loadModule("UICorner")
 local Flipper = loadModule("Flipper")
+local ImageDirectory = loadModule("ImageDirectory")
 
 local player = Players.LocalPlayer
 
@@ -34,6 +35,8 @@ function HUD:init()
 	self.weapon, self.setWeapon = Roact.createBinding("")
 	self.ammo, self.setAmmo = Roact.createBinding("0")
 	self.spare, self.setSpare = Roact.createBinding("0")
+	self.equipment, self.setEquipment = Roact.createBinding("")
+	self.equipmentNum, self.setEquipmentNum = Roact.createBinding(0)
 
 	-- Spawn this so it doesn't hold everything up
 	task.spawn(function()
@@ -91,9 +94,12 @@ function HUD:init()
 		end))
 
 		-- Listen to the ammo changed event to change the ammo UI
-		self.maid:GiveTask(ammoChanged.Event:Connect(function(newAmmo, newSpare)
+		self.maid:GiveTask(ammoChanged.Event:Connect(function(newAmmo, newSpare, equipmentName, equipmentNum)
 			self.setAmmo(tostring(newAmmo))
 			self.setSpare(tostring(newSpare))
+			if not equipmentName or not equipmentNum then return end
+			self.setEquipment(equipmentName)
+			self.setEquipmentNum(equipmentNum)
 		end))
 
 		-- Listen to the weapon changed event to change the weapon text
@@ -104,6 +110,32 @@ function HUD:init()
 end
 
 function HUD:render()
+	local equipmentIcons = {}
+
+	-- Only show equipment we have, use bindings to hide them when we use an equipment
+	-- Up to 5 (this could be max number of equipment someday?)
+	for i = 1, 5 do
+		equipmentIcons[i] = Roact.createElement("ImageLabel", {
+			Image = self.equipment:map(function(val)
+				if ImageDirectory[val .. "Icon"] then
+					return ImageDirectory[val .. "Icon"]
+				end
+				return ""
+			end);
+			Visible = self.equipmentNum:map(function(val)
+				if i > val then
+					return false
+				end
+				return true
+			end);
+			BackgroundTransparency = 1;
+			Name = "Template";
+			Size = UDim2.new(0.5, 0, 1, 0);
+			ScaleType = Enum.ScaleType.Fit;
+			BackgroundColor3 = Color3.new(1, 1, 1);
+		});
+	end
+
 	return Roact.createElement("ScreenGui", {
 		Name = "HUD";
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
@@ -180,6 +212,22 @@ function HUD:render()
 				TextScaled = true;
 				BackgroundColor3 = Color3.new(1, 1, 1);
 			});
+
+			Equipment = Roact.createElement("Frame", {
+				BackgroundTransparency = 1;
+				Position = UDim2.new(-0.007, 0, 0.987, 0);
+				Name = "Equipment";
+				Size = UDim2.new(0.506, 0, 0.634, 0);
+				BackgroundColor3 = Color3.new(1, 1, 1);
+			}, {
+				Icons = Roact.createFragment(equipmentIcons);
+			
+				UIListLayout = Roact.createElement("UIListLayout", {
+					Padding = UDim.new(-0.3, 0);
+					SortOrder = Enum.SortOrder.LayoutOrder;
+					FillDirection = Enum.FillDirection.Horizontal;
+				});
+			})
 		});
 	
 		Health = Roact.createElement("Frame", {

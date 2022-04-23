@@ -18,7 +18,9 @@ local Gamemodes = loadModule("Gamemodes")
 local Leaderboard = loadModule("Leaderboard")
 local WeaponHandler = loadModule("WeaponHandler")
 
-local MainGameLoop = {}
+local MainGameLoop = {
+	spawnedPlayers = {};
+}
 
 -- Starts the main game loop which loads/unloads maps and starts/ends rounds (the initiate function is called when the module is loaded in ModuleScriptLoader)
 function MainGameLoop:initiate()
@@ -60,13 +62,19 @@ function MainGameLoop:initiate()
 			-- Do game stuff
 			local winner = localGameOverEvent.Event:Wait()
 
-			gameOverEvent:FireAllClients(winner)
 			-- Tell all players to display the winners, then if anyone new joins, they can just wait for gameStatus to change back to choosing map
+			gameOverEvent:FireAllClients("ShowLeaderboard", winner)
 			self.gameStatus.Value = "GameOver"
 			self.currentMode = nil
 			self.currentGamemode.Value = ""
+			self.spawnedPlayers = {}
 
 			task.wait(5)
+
+			-- Tells players to hide leaderboard and go back to home screen
+			gameOverEvent:FireAllClients("UnloadingMap", winner)
+
+			task.wait(2)
 
 			Leaderboard:clearScores()
 			-- Unload the map
@@ -99,18 +107,26 @@ end
 
 -- When the player clicks spawn on their kit selection screen, spawn them into the game with their chosen kit
 function MainGameLoop:spawnPlayer(player, chosenKit)
-	if player.Character then
+	if player.Character and self.gameStatus.Value == "GameRunning" and not self.spawnedPlayers[tostring(player.UserId)] then
 		local success = WeaponHandler.setEquippedKit(player, chosenKit)
-
-		-- We want to filter accessories from bullet hits
-		for _, accessory in pairs(player.Character:GetChildren()) do
-			if accessory:IsA("Accessory") then
-				CollectionService:AddTag(accessory, "Accessory")
-			end
-		end
 	
 		-- Check if they are allowed to use the kit they chose
-		if self.currentMode then
+		if success and self.currentMode and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+			-- We want to filter accessories from bullet hits
+			for _, accessory in pairs(player.Character:GetChildren()) do
+				if accessory:IsA("Accessory") then
+					CollectionService:AddTag(accessory, "Accessory")
+				end
+			end
+			local diedConnection
+			diedConnection = player.Character.Humanoid.Died:Connect(function()
+				diedConnection:Disconnect()
+				diedConnection = nil
+				self.spawnedPlayers[tostring(player.UserId)] = nil
+			end)
+			self.spawnedPlayers[tostring(player.UserId)] = {
+				diedConnection = diedConnection;
+			}
 			self.currentMode:spawnPlayer(player)
 		end
 		return success
@@ -131,10 +147,20 @@ function MainGameLoop.playerKilled(killer, victim, weapon)
 	end
 end
 
+-- When a player leaves, disconnect their connections and then remove them from spawned players table
+function MainGameLoop.playerRemoving(player)
+	if MainGameLoop.spawnedPlayers[tostring(player.UserId)] and MainGameLoop.spawnedPlayers[tostring(player.UserId)].diedConnection then
+		local spawnedPlayerTable = MainGameLoop.spawnedPlayers[tostring(player.UserId)]
+		spawnedPlayerTable.diedConnection:Disconnect()
+		MainGameLoop.spawnedPlayers[tostring(player.UserId)] = nil
+	end
+end
+
 spawnPlayerFunc.OnServerInvoke = function(player, chosenKit)
 	return MainGameLoop:spawnPlayer(player, chosenKit)
 end
 
 playerKilledEvent.Event:Connect(MainGameLoop.playerKilled)
+Players.PlayerRemoving:Connect(MainGameLoop.playerRemoving)
 
 return MainGameLoop

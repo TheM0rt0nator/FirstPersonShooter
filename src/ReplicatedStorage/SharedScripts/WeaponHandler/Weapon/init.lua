@@ -27,6 +27,7 @@ local Keybinds = loadModule("Keybinds")
 local ProjectileRender = loadModule("ProjectileRender")
 local CharacterManager = loadModule("CharacterManager")
 local EquipmentFuncs = loadModule("EquipmentFuncs")
+local String = loadModule("String")
 
 local player = Players.LocalPlayer
 local rand = Random.new()
@@ -185,7 +186,7 @@ function Weapon:unequip()
 	task.spawn(function()
 		equipWeaponFunc:InvokeServer(self.name, false)
 	end)
-	if self.weaponHolder.Receiver:FindFirstChild("UnequipSound") then
+	if self.weaponHolder:FindFirstChild("Receiver") and self.weaponHolder.Receiver:FindFirstChild("UnequipSound") then
 		self.weaponHolder.Receiver.UnequipSound:Play()
 	end
 	-- Destroy the viewmodel, which also destroys the gun, and set equipped to false
@@ -506,6 +507,16 @@ function Weapon:useEquipment(handler)
 	-- After a slight delay, run the throwing function for this equipment
 	if typeof(EquipmentFuncs[equipment.Name .. "throw"]) == "function" then
 		EquipmentFuncs[equipment.Name .. "throw"]({
+			primaryPart = self.equipmentHolder.Receiver;
+			welds = {
+				self.viewmodel.RootPart.equipment;
+				self.viewmodel.Left.leftHandEquipment;
+				self.viewmodel.Right.rightHandEquipment;
+			};
+			handler = handler;
+		})
+	elseif typeof(EquipmentFuncs[String.removeSpaces(equipment.Name) .. "throw"]) == "function" then
+		EquipmentFuncs[String.removeSpaces(equipment.Name) .. "throw"]({
 			primaryPart = self.equipmentHolder.Receiver;
 			welds = {
 				self.viewmodel.RootPart.equipment;

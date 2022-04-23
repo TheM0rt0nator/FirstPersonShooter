@@ -11,6 +11,7 @@ local aimWeaponEvent = getDataStream("AimWeapon", "RemoteEvent")
 local playerHitEvent = getDataStream("PlayerHit", "RemoteEvent")
 local playerHitByEquipment = getDataStream("PlayerHitByEquipment", "RemoteEvent")
 local useEquipmentEvent = getDataStream("UseEquipmentEvent", "RemoteEvent")
+local gameOverEvent = getDataStream("GameOverEvent", "RemoteEvent")
 local equipWeaponFunc = getDataStream("EquipWeapon", "RemoteFunction")
 local reloadWeaponFunc = getDataStream("ReloadWeapon", "RemoteFunction")
 local useEquipmentFunc = getDataStream("UseEquipmentFunc", "RemoteFunction")
@@ -22,10 +23,13 @@ local Weapon = loadModule("Weapon")
 local Keybinds = loadModule("Keybinds")
 local UserInput = loadModule("UserInput")
 local EquipmentFuncs = loadModule("EquipmentFuncs")
+local String = loadModule("String")
+local CameraTypes = RunService:IsClient() and loadModule("CameraTypes")
 
 local setInterfaceState = RunService:IsClient() and getDataStream("SetInterfaceState", "BindableEvent")
 
 local gravity = Vector3.new(0, workspace.Gravity, 0)
+local camera = workspace.CurrentCamera
 
 local WeaponHandler = {
 	MAX_WEAPONS = 2;
@@ -209,6 +213,9 @@ end
 function WeaponHandler.fireWeapon(player, weapon, origin, velocity)
 	local playersVals, hasWeapon = WeaponHandler.weaponCheck(player, weapon)
 	if not hasWeapon then return end
+	-- Check the origin is close to the player
+	-- Check the time since the last fire is long enough
+	-- Check the velocity isn't too high
 	-- If server says they have no ammo, they have no ammo and don't do anything
 	if playersVals.weapons[playersVals.equipped].magData.ammo <= 0 then return end
 	-- Take one away from the server ammo
@@ -238,6 +245,8 @@ end
 
 -- When a player is hit, need to check to make sure the hit is valid and then deal damage
 function WeaponHandler.playerHit(player, weapon, bulletNum, hitPart)
+	local gameStatus = ReplicatedStorage:WaitForChild("GameValues"):WaitForChild("GameStatus")
+	if not gameStatus or gameStatus.Value ~= "GameRunning" then return end
 	if hitPart.Parent and hitPart.Parent:FindFirstChild("Humanoid") and hitPart.Parent.Humanoid.Health > 0 then--and Players:FindFirstChild(hitPart.Parent.Name) then
 		local playersVals = WeaponHandler.players[tostring(player.UserId)]
 		local weaponsStats = playersVals.weapons[playersVals.equipped].settings
@@ -251,9 +260,10 @@ end
 
 -- When a player is hit, need to check to make sure the hit is valid and then deal damage
 function WeaponHandler.playerHitByEquipment(player, hitPlayers, equipmentName)
+	local gameStatus = ReplicatedStorage:WaitForChild("GameValues"):WaitForChild("GameStatus")
+	if not gameStatus or gameStatus.Value ~= "GameRunning" then return end
 	if not WeaponHandler.players[tostring(player.UserId)] or not ReplicatedStorage.Assets.Equipment:FindFirstChild(equipmentName) then return end
 	local settings = require(ReplicatedStorage.Assets.Equipment:FindFirstChild(equipmentName):FindFirstChild("Settings"))
-
 	for _, plrInfo in pairs(hitPlayers) do
 		if plrInfo.player 
 			and plrInfo.player.Character 
@@ -274,6 +284,9 @@ end
 function WeaponHandler.useEquipment(player, origin, velocity, timeThrown, equipmentName, clientAmmo)
 	local playersVals, hasEquipment = WeaponHandler.equipmentCheck(player, equipmentName)
 	if not hasEquipment or not player.Character then return end
+	-- Check the origin is close to the player
+	-- Check the time since the last fire is long enough
+	-- Check the velocity isn't too high
 	-- If we can use the equipment, reduce the ammo by 1 on the server
 	playersVals.equipmentAmmo -= 1
 	if clientAmmo ~= playersVals.equipmentAmmo then return end
@@ -290,6 +303,7 @@ function WeaponHandler:setupWeapons(kit)
 	if not self.weaponObjects then
 		self.weaponObjects = {}
 	end
+	self.currentKit = kit
 	self.isUsingEquipment = false
 
 	-- Collect our equipment models (support for multiple equipment per kit, but not implemented switching between equipments)
@@ -344,7 +358,66 @@ function WeaponHandler:setupWeapons(kit)
 			end;
 		}, true)
 	end
+
+	-- Connect to the humanoid dieing to cleanup their weapons
+	local diedConnection
+	diedConnection = Players.LocalPlayer.Character:FindFirstChild("Humanoid").Died:Connect(function()
+		diedConnection:Disconnect()
+		self:cleanupWeapons(kit)
+		diedConnection = nil
+		-- Wait for the new character before we go back to the home screen
+		Players.LocalPlayer.CharacterAdded:Wait()
+		setInterfaceState:Fire("kitSelection")
+		CameraTypes:setCameraType("Scriptable")
+		camera.CFrame = CFrame.new(0, 0, 0)
+	end)
 	setInterfaceState:Fire("inGame")
+end
+
+-- When the player dies, we want to cleanup their weapons to prevent memory leaks and ensure they are fully reset
+function WeaponHandler:cleanupWeapons(kit)
+	for weaponNum, _ in pairs(WeaponKits[kit].Weapons) do
+		-- Destroy their weapon objects
+		local weaponObj = self.weaponObjects[weaponNum]
+		weaponObj:destroy()
+
+		-- Disconnects all the inputs from keybinds module to equip weapons
+		for bindNum, keybind in ipairs(Keybinds["Equip" .. weaponNum]) do
+			local inputType = (keybind.EnumType == Enum.UserInputType and keybind) or Enum.UserInputType.Keyboard
+			UserInput.disconnectInput(inputType, "EquipWeapon" .. weaponNum .. bindNum)
+		end
+	end
+
+	-- Disconnect equipment inputs
+	for bindNum, keybind in pairs(Keybinds.UseEquipment) do
+		local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
+		UserInput.disconnectInput(inputType, "UseEquipment" .. bindNum)
+	end
+end
+
+-- When the game is over, check the type of gameover and disable weapons accordingly
+function WeaponHandler.gameOver(type)
+	if type == "ShowLeaderboard" then
+		if not WeaponKits[WeaponHandler.currentKit] then return end
+		for weaponNum, _ in pairs(WeaponKits[WeaponHandler.currentKit].Weapons) do
+			-- Disable guns
+			local weaponObj = WeaponHandler.weaponObjects[weaponNum]
+			weaponObj:fire(false)
+			weaponObj:aim(false)
+			weaponObj:sprint(false, true)
+			weaponObj.disabled = true
+		end
+		-- Disable player input
+	elseif type == "UnloadingMap" then
+		-- Cleanup weapons, teleport player back to lobby send back to start screen
+		setInterfaceState:Fire("kitSelection")
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = CFrame.new(0, 0, 0)
+		if Players.LocalPlayer.Character and Players.LocalPlayer.Character.PrimaryPart then
+			Players.LocalPlayer.Character:SetPrimaryPartCFrame(workspace.Lobby:FindFirstChild("Spawn" .. math.random(1, 5)).CFrame * CFrame.new(0, 10, 0))
+		end
+		WeaponHandler.cleanupWeapons(WeaponHandler, WeaponHandler.currentKit)
+	end
 end
 
 -- Function which is called when another player shoots their gun and we want to replicate their bullets
@@ -385,6 +458,12 @@ function WeaponHandler.replicateEquipment(fromPlayer, origin, velocity, equipmen
 			origin = origin;
 			timeThrown = timeThrown;
 		})
+	elseif typeof(EquipmentFuncs[String.removeSpaces(equipmentName) .. "throw"]) == "function" then
+		EquipmentFuncs[String.removeSpaces(equipmentName) .. "throw"]({
+			velocity = velocity;
+			origin = origin;
+			timeThrown = timeThrown;
+		})
 	end
 end
 
@@ -415,6 +494,7 @@ elseif RunService:IsClient() then
 	WeaponHandler.ProjectileRender = ProjectileRender.new()
 	fireWeaponEvent.OnClientEvent:Connect(WeaponHandler.replicateBullet)
 	useEquipmentEvent.OnClientEvent:Connect(WeaponHandler.replicateEquipment)
+	gameOverEvent.OnClientEvent:Connect(WeaponHandler.gameOver)
 end
 
 return WeaponHandler

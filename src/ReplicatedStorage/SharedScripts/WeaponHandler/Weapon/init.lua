@@ -10,7 +10,6 @@ local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framewo
 local fireWeaponEvent = getDataStream("FireWeapon", "RemoteEvent")
 local aimWeaponEvent = getDataStream("AimWeapon", "RemoteEvent")
 local playerHitEvent = getDataStream("PlayerHit", "RemoteEvent")
-local useEquipmentFunc = getDataStream("UseEquipment", "RemoteFunction")
 local equipWeaponFunc = getDataStream("EquipWeapon", "RemoteFunction")
 local reloadWeaponFunc = getDataStream("ReloadWeapon", "RemoteFunction")
 
@@ -25,7 +24,7 @@ local Maid = loadModule("Maid")
 local Spring = loadModule("Spring")
 local UserInput = loadModule("UserInput")
 local Keybinds = loadModule("Keybinds")
-local BulletRender = loadModule("BulletRender")
+local ProjectileRender = loadModule("ProjectileRender")
 local CharacterManager = loadModule("CharacterManager")
 local EquipmentFuncs = loadModule("EquipmentFuncs")
 
@@ -43,7 +42,7 @@ function Weapon.new(name, handler, equipment)
 		maid = Maid.new();
 		canFire = true;
 		loadedAnimations = {};
-		hitDetector = BulletRender.new();
+		hitDetector = ProjectileRender.new();
 		springs = {
 			movementTilt = Spring.new();
 			walkCycle = Spring.new();
@@ -316,13 +315,13 @@ function Weapon:aim(bool)
 		if CharacterManager.isSprinting then
 			self:sprint(false, true)
 		end
-		local tweenInfo = TweenInfo.new(.7, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+		local tweenInfo = TweenInfo.new(0.7 / (self.settings.aimSpeed or 1), Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		local properties = {Value = 1}
 		self.loadedAnimations.aim:Play()
 		TweenService:Create(self.lerpValues.aim, tweenInfo, properties):Play()
 		TweenService:Create(self.lerpValues.walkspeed, tweenInfo, properties):Play()
 	else
-		local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+		local tweenInfo = TweenInfo.new(0.7 / (self.settings.aimSpeed or 1), Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		local properties = {Value = 0}
 		self.loadedAnimations.aim:Stop()
 		TweenService:Create(self.lerpValues.aim, tweenInfo, properties):Play()		
@@ -421,7 +420,6 @@ function Weapon:sprint(bool, changeIsSprinting)
 	local tweenInfo = TweenInfo.new(.7, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 	local properties = {Value = tweenTo}
 	TweenService:Create(self.lerpValues.sprint, tweenInfo, properties):Play()
-	print("Lerping sprint")
 	self.sprintStance = bool
 	if not bool then return end
 	self:aim(false)
@@ -477,6 +475,12 @@ function Weapon:useEquipment(handler)
 	
 	-- Play the holding and getting equipment out animations 
 	holdAnim:Play()
+	task.delay(getOutAnim.Length * 0.5, function()
+		-- Play unlatch sound for grenade
+		if self.equipmentHolder.Receiver:FindFirstChild("UnlatchSound") then
+			self.equipmentHolder.Receiver.UnlatchSound:Play()
+		end
+	end)
 	getOutAnim:Play()
 
 	-- Tween the equipment offset in
@@ -492,14 +496,26 @@ function Weapon:useEquipment(handler)
 		end
 	end
 
+	-- Play throwing sound
+	if self.equipmentHolder.Receiver:FindFirstChild("ThrowSound") then
+		self.equipmentHolder.Receiver.ThrowSound:Play()
+	end
+	
+	handler.numEquipment -= 1
+
 	-- After a slight delay, run the throwing function for this equipment
 	if typeof(EquipmentFuncs[equipment.Name .. "throw"]) == "function" then
-		EquipmentFuncs[equipment.Name .. "throw"](self.equipmentHolder.Receiver, {
-			self.viewmodel.RootPart.equipment;
-			self.viewmodel.Left.leftHandEquipment;
-			self.viewmodel.Right.rightHandEquipment;
-		}, handler)
+		EquipmentFuncs[equipment.Name .. "throw"]({
+			primaryPart = self.equipmentHolder.Receiver;
+			welds = {
+				self.viewmodel.RootPart.equipment;
+				self.viewmodel.Left.leftHandEquipment;
+				self.viewmodel.Right.rightHandEquipment;
+			};
+			handler = handler;
+		})
 	end
+	
 	-- Play the throw animation
 	throwAnim:Play()
 	throwAnim.Stopped:Wait()

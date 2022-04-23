@@ -9,15 +9,19 @@ local setEquippedKit = getDataStream("SetEquippedKit", "RemoteEvent")
 local fireWeaponEvent = getDataStream("FireWeapon", "RemoteEvent")
 local aimWeaponEvent = getDataStream("AimWeapon", "RemoteEvent")
 local playerHitEvent = getDataStream("PlayerHit", "RemoteEvent")
+local playerHitByEquipment = getDataStream("PlayerHitByEquipment", "RemoteEvent")
+local useEquipmentEvent = getDataStream("UseEquipmentEvent", "RemoteEvent")
 local equipWeaponFunc = getDataStream("EquipWeapon", "RemoteFunction")
 local reloadWeaponFunc = getDataStream("ReloadWeapon", "RemoteFunction")
+local useEquipmentFunc = getDataStream("UseEquipmentFunc", "RemoteFunction")
 local playerKilledEvent = getDataStream("LocalPlayerKilled", "BindableEvent")
 
 local WeaponKits = loadModule("WeaponKits")
-local BulletRender = loadModule("BulletRender")
+local ProjectileRender = loadModule("ProjectileRender")
 local Weapon = loadModule("Weapon")
 local Keybinds = loadModule("Keybinds")
 local UserInput = loadModule("UserInput")
+local EquipmentFuncs = loadModule("EquipmentFuncs")
 
 local setInterfaceState = RunService:IsClient() and getDataStream("SetInterfaceState", "BindableEvent")
 
@@ -65,6 +69,8 @@ function WeaponHandler.setEquippedKit(player, kit)
 		WeaponHandler.players[tostring(player.UserId)] = {
 			currentKit = kit;
 			equipped = "primary";
+			equippedEquipment = WeaponKits[kit].Equipment[1];
+			equipmentAmmo = WeaponKits[kit].Equipment[1].Amount;
 			weapons = {
 				primary = {
 					model = primaryWeapon;
@@ -83,6 +89,7 @@ function WeaponHandler.setEquippedKit(player, kit)
 					};
 				};
 			};
+			equipment = WeaponKits[kit].Equipment;
 		}
 		
 		if player.Character then
@@ -127,6 +134,19 @@ function WeaponHandler.weaponCheck(player, weapon)
 		end
 	end
 	if not hasWeapon or not player.Character then return end
+	return playersVals, true
+end
+
+-- Checks to see if the player has the equipment they are trying to use equipped
+function WeaponHandler.equipmentCheck(player, equipmentName)
+	local playersVals = WeaponHandler.players[tostring(player.UserId)]
+	if not playersVals or not playersVals.currentKit then return end
+	local hasEquipment
+	-- Check if they have this equipment equipped and we have enough ammo
+	if playersVals.equippedEquipment.Name == equipmentName and playersVals.equipmentAmmo > 0 then
+		hasEquipment = true
+	end
+	if not hasEquipment or not player.Character then return end
 	return playersVals, true
 end
 
@@ -229,6 +249,38 @@ function WeaponHandler.playerHit(player, weapon, bulletNum, hitPart)
 	end
 end
 
+-- When a player is hit, need to check to make sure the hit is valid and then deal damage
+function WeaponHandler.playerHitByEquipment(player, hitPlayers, equipmentName)
+	if not WeaponHandler.players[tostring(player.UserId)] or not ReplicatedStorage.Assets.Equipment:FindFirstChild(equipmentName) then return end
+	local settings = require(ReplicatedStorage.Assets.Equipment:FindFirstChild(equipmentName):FindFirstChild("Settings"))
+
+	for _, plrInfo in pairs(hitPlayers) do
+		if plrInfo.player 
+			and plrInfo.player.Character 
+			and plrInfo.player.Character:FindFirstChild("Humanoid") 
+			and plrInfo.player.Character.Humanoid.Health > 0 
+		then
+			local damageFactor = (settings.blastRadius - plrInfo.dist) * (settings.damage / settings.blastRadius)
+			plrInfo.player.Character.Humanoid:TakeDamage(damageFactor)
+			if plrInfo.player.Character.Humanoid.Health <= 0 then
+				playerKilledEvent:Fire(player, plrInfo.player, equipmentName)
+			end
+		end
+	end
+end
+
+
+-- When a player throws equipment, we need to check that they are allowed to throw the specified equipment and that the velocity isn't too high and the origin is near the player
+function WeaponHandler.useEquipment(player, origin, velocity, timeThrown, equipmentName, clientAmmo)
+	local playersVals, hasEquipment = WeaponHandler.equipmentCheck(player, equipmentName)
+	if not hasEquipment or not player.Character then return end
+	-- If we can use the equipment, reduce the ammo by 1 on the server
+	playersVals.equipmentAmmo -= 1
+	if clientAmmo ~= playersVals.equipmentAmmo then return end
+	useEquipmentEvent:FireAllClients(player, origin, velocity, equipmentName, timeThrown)
+	return true
+end
+
 
 -- CLIENT FUNCTIONS --
 
@@ -261,6 +313,7 @@ function WeaponHandler:setupWeapons(kit)
 					if not weaponObj.equipped and not self.isUsingEquipment then
 						local otherWeapon = weaponNum == "Primary" and "Secondary" or "Primary"
 						self.weaponObjects[otherWeapon]:unequip()
+						task.wait(.3)
 						weaponObj:equip(true)
 						self.equipped = weaponNum
 					end
@@ -319,7 +372,20 @@ function WeaponHandler.replicateBullet(fromPlayer, origin, velocity, weapon)
 	end
 
 	-- Fire a raycast bullet to calculate actual hits
-	WeaponHandler.BulletRender:fire(origin, velocity, gravity, 2000, "Blacklist", {workspace.Camera, Players.LocalPlayer.Character}, bullet, true)
+	WeaponHandler.ProjectileRender:fire(origin, velocity, gravity, 2000, "Blacklist", {workspace.Camera, Players.LocalPlayer.Character}, bullet, true)
+end
+
+-- Server tells all clients apart from the player throwing to render the equipment
+function WeaponHandler.replicateEquipment(fromPlayer, origin, velocity, equipmentName, timeThrown)
+	-- Don't want to replicate for the one who threw it
+	if Players.LocalPlayer == fromPlayer then return end
+	if typeof(EquipmentFuncs[equipmentName .. "throw"]) == "function" then
+		EquipmentFuncs[equipmentName .. "throw"]({
+			velocity = velocity;
+			origin = origin;
+			timeThrown = timeThrown;
+		})
+	end
 end
 
 -- When the player joins, create a table for them so we can store the weapons they currently have equipped
@@ -340,12 +406,15 @@ if RunService:IsServer() then
 	fireWeaponEvent.OnServerEvent:Connect(WeaponHandler.fireWeapon)
 	aimWeaponEvent.OnServerEvent:Connect(WeaponHandler.aimWeapon)
 	playerHitEvent.OnServerEvent:Connect(WeaponHandler.playerHit)
+	playerHitByEquipment.OnServerEvent:Connect(WeaponHandler.playerHitByEquipment)
 	equipWeaponFunc.OnServerInvoke = WeaponHandler.equipWeapon
 	reloadWeaponFunc.OnServerInvoke = WeaponHandler.reloadWeapon
+	useEquipmentFunc.OnServerInvoke = WeaponHandler.useEquipment
 elseif RunService:IsClient() then
 	-- Create a new bullet renderer for other players bullets
-	WeaponHandler.BulletRender = BulletRender.new()
+	WeaponHandler.ProjectileRender = ProjectileRender.new()
 	fireWeaponEvent.OnClientEvent:Connect(WeaponHandler.replicateBullet)
+	useEquipmentEvent.OnClientEvent:Connect(WeaponHandler.replicateEquipment)
 end
 
 return WeaponHandler

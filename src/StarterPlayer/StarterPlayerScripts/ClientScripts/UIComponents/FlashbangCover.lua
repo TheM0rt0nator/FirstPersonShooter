@@ -44,6 +44,7 @@ function FlashbangCover:init()
 		local ignoreList = {
 			CollectionService:GetTagged("Accessory");
 			CollectionService:GetTagged("Weapon");
+			CollectionService:GetTagged("Foliage");
 			camera:FindFirstChild("ViewModel");
 			grenade;
 			soundPart;

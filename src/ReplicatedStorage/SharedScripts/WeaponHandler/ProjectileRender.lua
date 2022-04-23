@@ -7,21 +7,21 @@ local loadModule = table.unpack(require(ReplicatedStorage.Framework))
 local ProjectileMotion = loadModule("ProjectileMotion")
 local Raycast = loadModule("Raycast")
 
-local BulletRender = {}
-BulletRender.__index = BulletRender
+local ProjectileRender = {}
+ProjectileRender.__index = ProjectileRender
 
 -- Create a new hit detector for a weapon which can be used to cast projectiles
-function BulletRender.new()
+function ProjectileRender.new()
 	local self = {
 		hitEvent = Instance.new("BindableEvent");
 		bulletConnections = {};
 	}
-	setmetatable(self, BulletRender)
+	setmetatable(self, ProjectileRender)
 	return self
 end
 
 -- Fires a projectile with the given velocity and acceleration, and detects what it hits (can use whitelist or blacklist)
-function BulletRender:fire(origin, initialVelocity, acceleration, maxDist, filterType, filterObjects, bulletPart, isReplicated)
+function ProjectileRender:fire(origin, initialVelocity, acceleration, maxDist, filterType, filterObjects, bulletPart, isReplicated)
 	local timePassed = 0
 	filterType = filterType or "Blacklist"
 	filterObjects = filterObjects or {}
@@ -57,7 +57,7 @@ function BulletRender:fire(origin, initialVelocity, acceleration, maxDist, filte
 end
 
 -- If we want to, can render the bullet based on where the ray currently is
-function BulletRender:renderBullet(bulletPart)
+function ProjectileRender:renderBullet(bulletPart)
 	self.bulletConnections[bulletPart] = self.renderBulletEvent.Event:Connect(function(bullet, position, velocity)
 		bullet.Size = Vector3.new(0.05, 0.05, velocity.Magnitude / 200)
 		bullet.CFrame = CFrame.new(position + velocity.Unit * bullet.Size.Z, position + velocity.Unit * bullet.Size.Z * 2)
@@ -65,7 +65,7 @@ function BulletRender:renderBullet(bulletPart)
 end	
 
 -- Destroys the bullet and disconnects it's connections
-function BulletRender:destroyBullet(bulletPart)
+function ProjectileRender:destroyBullet(bulletPart)
 	if bulletPart then
 		self.bulletConnections[bulletPart]:Disconnect()
 		self.bulletConnections[bulletPart] = nil
@@ -73,4 +73,4 @@ function BulletRender:destroyBullet(bulletPart)
 	end
 end
 
-return BulletRender
+return ProjectileRender

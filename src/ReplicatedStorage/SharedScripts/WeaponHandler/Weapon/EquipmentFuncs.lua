@@ -40,7 +40,7 @@ function EquipmentFuncs.throw(args)
 			part.Parent = newGrenade
 		end
 	else
-		newGrenade = fragGrenade:Clone()
+		newGrenade = args.model:Clone()
 		primaryPart = newGrenade.Receiver
 	end
 	primaryPart.Parent.Handle.CanCollide = true
@@ -72,6 +72,7 @@ function EquipmentFuncs.throw(args)
 	local ignoreList = {
 		CollectionService:GetTagged("Accessory");
 		CollectionService:GetTagged("Weapon");
+		CollectionService:GetTagged("Foliage");
 		camera:FindFirstChild("ViewModel");
 		newGrenade;
 	}
@@ -92,11 +93,12 @@ end
 -- When we throw the M62, just set it's velocity, wait a certain time and then explode and find the players near it (this function also support replication)
 function EquipmentFuncs.FragGrenadethrow(args)
 	local isReplicated = args.handler == nil
-	local primaryPart = args.primaryPart
 	local settings = require(fragGrenade:FindFirstChild("Settings"))
 	
 	args.settings = settings
+	args.model = fragGrenade
 	local newGrenade = EquipmentFuncs.throw(args)
+	local primaryPart = newGrenade:FindFirstChild("Receiver")
 
 	-- Take the ping away from the time till explosion if it is a replicated grenade
 	local timeTilExplode = GRENADE_TIMER
@@ -150,11 +152,12 @@ end
 -- Same as M62 but doesn't explode just releases smoke
 function EquipmentFuncs.SmokeGrenadethrow(args)
 	local isReplicated = args.handler == nil
-	local primaryPart = args.primaryPart
 	local settings = require(smokeGrenade:FindFirstChild("Settings"))
 	
 	args.settings = settings
+	args.model = smokeGrenade
 	local newGrenade = EquipmentFuncs.throw(args)
+	local primaryPart = newGrenade:FindFirstChild("Receiver")
 
 	-- Take the ping away from the time till explosion if it is a replicated grenade
 	local timeTilSmoke = 2
@@ -191,11 +194,12 @@ end
 -- Same as others but when it explodes, we fire a flashbang event to make players screens go white depending on their distance / look vector from the flashbang
 function EquipmentFuncs.Flashbangthrow(args)
 	local isReplicated = args.handler == nil
-	local primaryPart = args.primaryPart
 	local settings = require(flashbang:FindFirstChild("Settings"))
 	
 	args.settings = settings
+	args.model = flashbang
 	local newGrenade = EquipmentFuncs.throw(args)
+	local primaryPart = newGrenade:FindFirstChild("Receiver")
 
 	-- Take the ping away from the time till explosion if it is a replicated grenade
 	local timeTilExplode = GRENADE_TIMER

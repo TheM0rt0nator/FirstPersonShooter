@@ -97,6 +97,7 @@ function EquipmentFuncs.throw(args)
 	return newGrenade
 end
 
+
 -- When we throw the M62, just set it's velocity, wait a certain time and then explode and find the players near it (this function also support replication)
 function EquipmentFuncs.FragGrenadethrow(args)
 	local gameStatus = ReplicatedStorage.GameValues.GameStatus

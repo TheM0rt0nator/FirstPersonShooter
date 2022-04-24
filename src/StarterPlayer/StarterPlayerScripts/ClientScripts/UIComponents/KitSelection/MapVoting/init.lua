@@ -3,6 +3,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
+local superVoteEvent = getDataStream("SuperVoteEvent", "RemoteEvent")
+
 local Roact = loadModule("Roact")
 local Maid = loadModule("Maid")
 local MapVotingTile = loadModule("MapVotingTile")
@@ -21,6 +23,7 @@ function MapVoting:init()
 		self.gameStatus = gameValues:WaitForChild("GameStatus")
 		-- Set the maps in the state when the component loads if it is map voting time
 		if self.gameStatus.Value == "MapVoting" then
+			self.setTimeLeft(String.convertToMS(mapVotes.Timer.Value))
 			self:startTimer(mapVotes)
 			self.setVisible(true)
 			self:setState({
@@ -30,6 +33,7 @@ function MapVoting:init()
 		-- When status changes to map voting, make this UI visible, or invisible if not
 		self.maid:GiveTask(self.gameStatus.Changed:Connect(function()
 			if self.gameStatus.Value == "MapVoting" then
+				self.setTimeLeft(String.convertToMS(mapVotes.Timer.Value))
 				self:startTimer(mapVotes)
 				self:setState({
 					maps = mapVotes:WaitForChild("Maps"):GetChildren();
@@ -39,16 +43,27 @@ function MapVoting:init()
 				self.setVisible(false)
 			end
 		end))
+		-- If someone supervotes, show their name where the timer was, then reset the timer
+		self.maid:GiveTask(superVoteEvent.OnClientEvent:Connect(function(playerName, map)
+			self.running = false
+			self.setTimeLeft(playerName .. " super voted for " .. map .. "!")
+			if self.gameStatus.Value == "MapVoting" then
+				self.gameStatus.Changed:Wait()
+			end
+			self.setTimeLeft("00:00")
+		end))
 	end)
 end
 
 -- Starts the timer for the map voting to be over
 function MapVoting:startTimer(mapVotes)
 	task.spawn(function()
-		while self.gameStatus.Value == "MapVoting" do
+		self.running = true
+		while self.gameStatus.Value == "MapVoting" and self.running do
 			self.setTimeLeft(String.convertToMS(mapVotes.Timer.Value))
 			task.wait(1)
 		end
+		self.running = false
 	end)
 end
 

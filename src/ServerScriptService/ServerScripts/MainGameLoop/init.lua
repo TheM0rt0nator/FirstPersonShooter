@@ -23,7 +23,7 @@ local MainGameLoop = {
 	spawnedPlayers = {};
 }
 
-local VOTE_MAP_TIME = 250
+local VOTE_MAP_TIME = 30
 
 -- Starts the main game loop which loads/unloads maps and starts/ends rounds (the initiate function is called when the module is loaded in ModuleScriptLoader)
 function MainGameLoop:initiate()
@@ -41,6 +41,7 @@ function MainGameLoop:initiate()
 				self.mapVotesTimer.Value = VOTE_MAP_TIME
 				while self.mapVotesTimer.Value > 0  do
 					if self.mapVotes:FindFirstChild("SuperVote") then
+						task.wait(5)
 						break
 					end
 					task.wait(1)
@@ -62,10 +63,11 @@ function MainGameLoop:initiate()
 			-- Clear the map votes
 			self.mapsToVote:ClearAllChildren()
 			if self.mapVotes:FindFirstChild("SuperVote") then
-				task.wait(2)
 				self.mapVotes:FindFirstChild("SuperVote"):Destroy()
 			end
 
+			-- Reset timer
+			self.mapVotesTimer.Value = VOTE_MAP_TIME
 			self.gameStatus.Value = "ChoosingGamemode"
 			local modeChosen, err = pcall(function()
 				self.currentMode = Gamemodes:chooseGamemode()
@@ -103,10 +105,16 @@ function MainGameLoop:initiate()
 			task.wait(2)
 
 			Leaderboard:clearScores()
+			-- Cleanup died connections
 			for _, plrInfo in pairs(self.spawnedPlayers) do
 				if plrInfo.diedConnection then
 					plrInfo.diedConnection:Disconnect()
-					print("died connection cleaned up")
+				end
+			end
+			-- Heal players
+			for _, plr in pairs(Players:GetPlayers()) do
+				if plr.Character and plr.Character:FindFirstChild("Humanoid") then
+					plr.Character.Humanoid.Health = plr.Character.Humanoid.MaxHealth
 				end
 			end
 			self.spawnedPlayers = {}

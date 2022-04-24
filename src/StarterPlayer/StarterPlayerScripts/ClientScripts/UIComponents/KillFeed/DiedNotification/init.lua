@@ -58,7 +58,7 @@ function DiedNotification:render()
 	}, {
 		MainFrame = Roact.createElement("Frame", {
 			BackgroundTransparency = 1;
-			Position = UDim2.new(0.392, 0, 0.253, 0);
+			Position = UDim2.new(0.392, 0, 0.1, 0);
 			Name = "MainFrame";
 			Size = UDim2.new(0.216, 0, 0.213, 0);
 			BackgroundColor3 = Color3.new(1, 1, 1);

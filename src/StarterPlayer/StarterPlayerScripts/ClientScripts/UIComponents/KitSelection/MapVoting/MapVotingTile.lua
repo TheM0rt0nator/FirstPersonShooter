@@ -4,6 +4,7 @@ local MarketplaceService = game:GetService("MarketplaceService")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
 
+local superVoteEvent = getDataStream("SuperVoteEvent", "RemoteEvent")
 local mapVotesChanged = getDataStream("MapVotesChanged", "RemoteEvent")
 local superVoteFunc = getDataStream("SuperVoteFunc", "RemoteFunction")
 local localMapVotesChanged = getDataStream("LocalMapVotesChanged", "BindableEvent")
@@ -21,20 +22,22 @@ function MapVotingTile:init()
 	self.maid = Maid.new()
 	self.votes, self.setVotes = Roact.createBinding("0")
 	self.selected, self.setSelected = Roact.createBinding(false)
+	self.supervoteVisible, self.setSuperVoteVisible = Roact.createBinding(true)
 	self.debounce = false
 	self.superVoteDebounce = false
 
 	task.spawn(function()
 		local gameValues = ReplicatedStorage:WaitForChild("GameValues")
-		local mapVotes = ReplicatedStorage:WaitForChild("MapVotes")
+		self.mapVotes = ReplicatedStorage:WaitForChild("MapVotes")
 		self.gameStatus = gameValues:WaitForChild("GameStatus")
 		-- When the tile loads, set it's votes to the value in replicated storage for this map
 		if self.gameStatus.Value == "MapVoting" then
-			self.setVotes(tostring(mapVotes.Maps:FindFirstChild(self.props.map).Value))
+			self.setVotes(tostring(self.mapVotes.Maps:FindFirstChild(self.props.map).Value))
+			self:superVoteCheck()
 		end
 		-- Change the value when the repstorage value changes
 		self.maid:GiveTask(mapVotesChanged.OnClientEvent:Connect(function()
-			self.setVotes(tostring(mapVotes.Maps:FindFirstChild(self.props.map).Value))
+			self.setVotes(tostring(self.mapVotes.Maps:FindFirstChild(self.props.map).Value))
 		end))
 		-- Set the votes back to 0 when the map voting stage is over, or set it to the votes when it is map voting
 		self.maid:GiveTask(self.gameStatus.Changed:Connect(function()
@@ -42,18 +45,58 @@ function MapVotingTile:init()
 				self.setVotes("0")
 				self.setSelected(false)
 			else
-				self.setVotes(tostring(mapVotes.Maps:FindFirstChild(self.props.map).Value))
+				self.setSuperVoteVisible(true)
+				self:superVoteCheck()
+				self.setVotes(tostring(self.mapVotes.Maps:FindFirstChild(self.props.map).Value))
 			end
 		end))
+		-- Selection box around selected vote
 		self.maid:GiveTask(localMapVotesChanged.Event:Connect(function(vote)
 			if self.props.vote ~= vote then
 				self.setSelected(false)
 			end
 		end))
+		-- If someone supervotes, need to disable the voting buttons
+		self.maid:GiveTask(superVoteEvent.OnClientEvent:Connect(function(playerName, map)
+			-- Disable the buttons
+			self.debounce = true
+			self.running = false
+			self.setSuperVoteVisible(false)
+			self.superVoteDebounce = true
+			if self.props.map == map then
+				self.setVotes("SUPERVOTED!")
+			end
+			if self.gameStatus.Value == "MapVoting" then
+				self.gameStatus.Changed:Wait()
+			end
+			self.setVotes("0")
+			-- Enable the buttons
+			self.debounce = false
+			self.superVoteDebounce = false
+		end))
+	end)
+end
+
+-- Loops to check when to hide the supervote buttons (when 5 seconds until voting ends)
+function MapVotingTile:superVoteCheck()
+	task.spawn(function()
+		self.running = true
+		while self.gameStatus.Value == "MapVoting" and self.running do
+			if self.mapVotes.Timer.Value <= 5 then
+				self.setSuperVoteVisible(false)
+				break
+			end
+			task.wait(1)
+		end
+		self.running = false
 	end)
 end
 
 function MapVotingTile:render()
+	if self.gameStatus.Value == "MapVoting" and self.mapVotes.Timer.Value > 5 and not self.mapVotes:FindFirstChild("SuperVote") then
+		self.setSuperVoteVisible(true)
+	end
+
 	return Roact.createElement("ImageButton", {
 		ScaleType = Enum.ScaleType.Fit;
 		Name = "Template";
@@ -122,6 +165,7 @@ function MapVotingTile:render()
 			Name = "SuperVote";
 			Position = UDim2.new(0, 0, 1, 0);
 			Size = UDim2.new(1, 0, 0.2, 0);
+			Visible = self.supervoteVisible;
 			TextScaled = true;
 			BackgroundColor3 = Color3.new(0, 0.678, 0.02);
 			[Roact.Event.MouseButton1Click] = function()

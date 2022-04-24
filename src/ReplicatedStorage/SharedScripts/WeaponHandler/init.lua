@@ -152,7 +152,7 @@ function WeaponHandler.equipmentCheck(player, equipmentName)
 	if not playersVals or not playersVals.currentKit then return end
 	local hasEquipment
 	-- Check if they have this equipment equipped and we have enough ammo
-	if playersVals.equippedEquipment.Name == equipmentName and playersVals.equipmentAmmo > 0 then
+	if playersVals.equippedEquipment.Name == equipmentName then
 		hasEquipment = true
 	end
 	if not hasEquipment or not player.Character then return end
@@ -461,7 +461,7 @@ function WeaponHandler:setupWeapons(kit)
 		Players.LocalPlayer.CharacterAdded:Wait()
 		setInterfaceState:Fire("kitSelection")
 		CameraTypes:setCameraType("Scriptable")
-		camera.CFrame = CFrame.new((workspace.HomeScreen.PrimaryPart.CFrame + Vector3.new(0, 10, 0)).Position, workspace.HomeScreen.PrimaryPart.CFrame.Position)
+		camera.CFrame = CFrame.new((workspace.HomeScreen.PrimaryPart.CFrame + Vector3.new(0, 5, 0)).Position, workspace.HomeScreen.PrimaryPart.CFrame.Position) * CFrame.Angles(0, 0, math.pi / 2)
 	end)
 	setInterfaceState:Fire("inGame")
 end
@@ -516,8 +516,8 @@ function WeaponHandler.gameOver(type)
 	elseif type == "UnloadingMap" then
 		-- Cleanup weapons, teleport player back to lobby send back to start screen
 		setInterfaceState:Fire("kitSelection")
-		camera.CameraType = Enum.CameraType.Scriptable
-		camera.CFrame = CFrame.new(0, 0, 0)
+		CameraTypes:setCameraType("Scriptable")
+		camera.CFrame = CFrame.new((workspace.HomeScreen.PrimaryPart.CFrame + Vector3.new(0, 5, 0)).Position, workspace.HomeScreen.PrimaryPart.CFrame.Position) * CFrame.Angles(0, 0, math.pi / 2)
 		if Players.LocalPlayer.Character and Players.LocalPlayer.Character.PrimaryPart then
 			Players.LocalPlayer.Character:SetPrimaryPartCFrame(workspace.Lobby:FindFirstChild("Spawn" .. math.random(1, 5)).CFrame * CFrame.new(0, 10, 0))
 		end

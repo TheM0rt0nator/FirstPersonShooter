@@ -452,7 +452,7 @@ end
 function Weapon:useEquipment(handler)
 	if not handler.currentEquipment or handler.numEquipment <= 0 then return end
 	if not self.weaponHolder or not self.weaponHolder:FindFirstChild("Receiver") then return end
-	if not self.equipmentHolder then return end
+	if not self.equipmentHolder or self.reloading then return end
 	if self.gameStatus.Value ~= "GameRunning" then return end
 	self:fire(false)
 	self:aim(false)
@@ -580,7 +580,9 @@ function Weapon:useEquipment(handler)
 	-- Enable the gun
 	self.disabled = false
 	self.equipmentHeld = false
-	handler.isUsingEquipment = false
+	task.delay(2, function()
+		handler.isUsingEquipment = false
+	end)
 end
 
 -- Hides or reveals the players weapon

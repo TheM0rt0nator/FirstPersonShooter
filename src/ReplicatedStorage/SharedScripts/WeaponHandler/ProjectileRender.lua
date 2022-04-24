@@ -1,11 +1,13 @@
 -- Module which raycasts along the path of a projectile to see when and where it hits something
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
 local loadModule = table.unpack(require(ReplicatedStorage.Framework))
 
 local ProjectileMotion = loadModule("ProjectileMotion")
 local Raycast = loadModule("Raycast")
+local Table = loadModule("Table")
 
 local ProjectileRender = {}
 ProjectileRender.__index = ProjectileRender
@@ -31,16 +33,31 @@ function ProjectileRender:fire(origin, initialVelocity, acceleration, maxDist, f
 		self:renderBullet(bulletPart)
 	end
 
+	-- Need to remove the viewmodel from filter objects for the server because these are client based
+	local serverFilterObjects = Table.clone(filterObjects)
+	table.remove(serverFilterObjects, 1)
+	-- Creates the path of the raycast, to be sent on for checks
+	local path = {
+		segments = {};
+		filterObjects = serverFilterObjects;
+	}
+
 	local connectionType = if RunService:IsClient() then RunService.RenderStepped elseif RunService:IsServer() then RunService.Heartbeat else nil
 	local castConnection
 	castConnection = connectionType:Connect(function(dt)
 		local position = ProjectileMotion.getPositionAtTime(timePassed, origin, initialVelocity, acceleration)
 		local velocity = ProjectileMotion.getVelocityAtTime(timePassed, initialVelocity, acceleration)
 		local raycastResult = Raycast.new(filterObjects, filterType, position, velocity.Unit, velocity.Magnitude * dt)
+		table.insert(path.segments, {
+			position = position;
+			direction = velocity.Unit;
+			length = velocity.Magnitude * dt;
+			hitPoint = raycastResult and raycastResult.Position;
+		})
 		if raycastResult and raycastResult.Instance then
 			castConnection:Disconnect()
 			if not isReplicated then
-				self.hitEvent:Fire(raycastResult.Instance)
+				self.hitEvent:Fire(raycastResult.Instance, path)
 			end
 			self:destroyBullet(bulletPart)
 			return
@@ -54,6 +71,27 @@ function ProjectileRender:fire(origin, initialVelocity, acceleration, maxDist, f
 			self:destroyBullet(bulletPart)
 		end
 	end)
+end
+
+-- Raycasts along the given path and checks there are no collisions
+function ProjectileRender:checkPath(path)
+	local pathSucceeded = true
+	local filterObjects = path.filterObjects
+	for _, segment in pairs(path.segments) do
+		-- Want to filter players and bullets as well in this check
+		for _, plr in pairs(Players:GetPlayers()) do
+			if plr.Character then
+				table.insert(filterObjects, plr.Character)
+			end
+		end
+		local length = not segment.hitPoint and segment.length or (segment.position - segment.hitPoint).Magnitude
+		local raycastResult = Raycast.new(filterObjects, "Blacklist", segment.position, segment.direction, length)
+		if raycastResult and raycastResult.Instance then
+			pathSucceeded = false
+			break
+		end
+	end
+	return pathSucceeded
 end
 
 -- If we want to, can render the bullet based on where the ray currently is

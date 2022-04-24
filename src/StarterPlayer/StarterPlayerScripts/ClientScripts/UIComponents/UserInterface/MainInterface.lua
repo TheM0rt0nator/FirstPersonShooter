@@ -18,6 +18,7 @@ local Components = {
 	KillNotification = loadModule("KillNotification");
 	KitSelection = loadModule("KitSelection");
 	LeaderboardUI = loadModule("LeaderboardUI");
+	SniperScope = loadModule("SniperScope");
 }
 
 local InterfaceStates = {
@@ -32,6 +33,7 @@ local InterfaceStates = {
 		"KillFeed";
 		"KillNotification";
 		"LeaderboardUI";
+		"SniperScope";
 	};
 }
 

@@ -22,6 +22,7 @@ function KillFeed:init()
 	self.tiles = {}
 	self.visible, self.setVisible = Roact.createBinding(false)
 	self.maid:GiveTask(playerKilledRemote.OnClientEvent:Connect(function(killer, victim, weapon)
+		if killer == victim then return end
 		-- Could use the weapon argument to add a weapon icon instead of the 'killed' text
 		-- Remove any kills which have expired
 		local timeNow = DateTime.now().UnixTimestamp
@@ -74,6 +75,7 @@ function KillFeed:render()
 		Name = "KillFeed";
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
 		ResetOnSpawn = false;
+		DisplayOrder = 1;
 		Enabled = Roact.joinBindings({self.props.visible, self.visible}):map(function(values)
 			return values[1] and values[2]
 		end);

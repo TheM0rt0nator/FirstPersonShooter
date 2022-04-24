@@ -22,26 +22,36 @@ function DiedNotification:init()
 	self.weapon, self.setWeapon = Roact.createBinding("")
 	self.maid:GiveTask(playerKilledRemote.OnClientEvent:Connect(function(killer, victim, weapon)
 		if player.Name == victim 
-			and workspace:FindFirstChild(killer) 
-			and workspace[killer]:FindFirstChild("Humanoid") 
-			and workspace[killer].Humanoid.Health > 0 
+			and workspace:FindFirstChild(killer)
 		then
 			-- Set to death cam, then wait for it to change off death cam to hide the death notification
-			self.setKiller(killer)
-			self.setWeapon(weapon)
+			if killer ~= victim then 
+				self.setKiller(killer)
+			end
+			if weapon then
+				self.setWeapon(weapon or "")
+			end
 			self.setVisible(true)
 			CameraTypes:setCameraType("DeathCam", workspace:FindFirstChild(killer).HumanoidRootPart)
+			task.wait(2)
+			if CameraTypes.currentType ~= "DeathCam" then 
+				self.setVisible(false)
+				return 
+			end
 			camTypeChanged.Event:Wait()
 			self.setVisible(false)
+			self.setWeapon("")
+			self.setKiller("")
 		end
 	end))
 end
 
 function DiedNotification:render()
 	return Roact.createElement("ScreenGui", {
-		Name = "KillFeed";
+		Name = "DiedNotification";
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
 		ResetOnSpawn = false;
+		DisplayOrder = 1;
 		Enabled = Roact.joinBindings({self.props.visible, self.visible}):map(function(values)
 			return values[1] and values[2]
 		end);

@@ -11,5 +11,5 @@ if isFistJoin then
 	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
 
 	camera.CameraType = Enum.CameraType.Scriptable
-	camera.CFrame = CFrame.new(0, 0, 0)
+	camera.CFrame = CFrame.new((workspace.HomeScreen.PrimaryPart.CFrame + Vector3.new(0, 5, 0)).Position, workspace.HomeScreen.PrimaryPart.CFrame.Position) * CFrame.Angles(0, 0, math.pi / 2)
 end

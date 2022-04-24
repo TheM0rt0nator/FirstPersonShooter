@@ -24,7 +24,7 @@ function KillNotification:init()
 	self.visible, self.setVisible = Roact.createBinding(false)
 	-- Connect to the player killed remote and check if we are the killer
 	self.maid:GiveTask(playerKilledRemote.OnClientEvent:Connect(function(killer, victim, weapon)
-		if player.Name == killer then
+		if player.Name == killer and player.Name ~= victim then
 			-- Play a sound to notify them they got a kill
 			ReplicatedStorage.Assets.Sounds.KillSound:Play()
 			-- Could add a cool animation here but limited time
@@ -77,6 +77,7 @@ function KillNotification:render()
 		Name = "KillNotifications";
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
 		ResetOnSpawn = false;
+		DisplayOrder = 1;
 		Enabled = Roact.joinBindings({self.props.visible, self.visible}):map(function(values)
 			return values[1] and values[2]
 		end);

@@ -6,7 +6,7 @@ local Roact = loadModule("Roact")
 
 local UICorner = Roact.Component:extend("UICorner")
 
--- UI Cornder component to consolidate code
+-- UI Corner component to consolidate code
 function UICorner:render()
 	return Roact.createElement("UICorner", {
 		CornerRadius = UDim.new(self.props.scale, self.props.offset)

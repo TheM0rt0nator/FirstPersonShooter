@@ -140,6 +140,7 @@ function HUD:render()
 		Name = "HUD";
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
 		ResetOnSpawn = false;
+		DisplayOrder = 1;
 		Enabled = Roact.joinBindings({self.props.visible, self.visible}):map(function(values)
 			return values[1] and values[2]
 		end);

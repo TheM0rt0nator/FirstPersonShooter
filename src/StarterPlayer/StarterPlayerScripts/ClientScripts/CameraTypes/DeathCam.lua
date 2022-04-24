@@ -12,7 +12,7 @@ return function(self, subjectPart)
 	local goalHeight = startHeight + 20
 	local renderConnection
 	renderConnection = RunService.RenderStepped:Connect(function(dt)
-		if self.currentType ~= "DeathCam" then
+		if self.currentType ~= "DeathCam" or not subjectPart or not subjectPart:IsDescendantOf(workspace) then
 			renderConnection:Disconnect()
 			renderConnection = nil
 			return

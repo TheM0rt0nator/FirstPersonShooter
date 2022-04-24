@@ -21,12 +21,12 @@ function Maths.mode(tab)
 		if not modes[1] or modes[1].val < val then
 			modes = {}
 			table.insert(modes, {
-				ind = index;
+				index = index;
 				val = val;
 			})
 		elseif modes[1].val == val then
 			table.insert(modes, {
-				ind = index;
+				index = index;
 				val = val;
 			})
 		end

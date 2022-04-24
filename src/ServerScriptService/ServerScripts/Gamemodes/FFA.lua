@@ -11,7 +11,7 @@ local Leaderboard = loadModule("Leaderboard")
 
 local FFA = {
 	name = "FFA";
-	killGoal = 1;
+	killGoal = 2;
 	-- Added a roundType value incase a gamemode is time-based rather than kill-based
 	roundType = "Kills";
 }

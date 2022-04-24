@@ -18,6 +18,7 @@ local weaponChanged = getDataStream("WeaponChanged", "BindableEvent")
 local hitPlayerEvent = getDataStream("HitPlayerEvent", "BindableEvent")
 local crouchEvent = getDataStream("CrouchEvent", "BindableEvent")
 local sprintEvent = getDataStream("SprintEvent", "BindableEvent")
+local sniperAimEvent = getDataStream("SniperAimEvent", "BindableEvent")
 
 local Maths = loadModule("Maths")
 local Maid = loadModule("Maid")
@@ -31,7 +32,7 @@ local String = loadModule("String")
 
 local player = Players.LocalPlayer
 local rand = Random.new()
-local gravity = Vector3.new(0, workspace.Gravity, 0)
+local gravity = Vector3.new(0, -workspace.Gravity, 0)
 
 local Weapon = {}
 Weapon.__index = Weapon
@@ -59,6 +60,7 @@ function Weapon.new(name, handler, equipment)
 			equip = Instance.new("NumberValue");
 			crouch = Instance.new("NumberValue");
 			equipmentHold = Instance.new("NumberValue");
+			sniperAim = Instance.new("NumberValue");
 		};
 	}
 	
@@ -71,6 +73,8 @@ function Weapon.new(name, handler, equipment)
 			self:destroy()
 		end)
 	end
+
+	self.gameStatus = ReplicatedStorage:WaitForChild("GameValues"):WaitForChild("GameStatus")
 
 	-- Find our weapon
 	self.storedWeapon = ReplicatedStorage.Assets.Weapons:FindFirstChild(self.name)
@@ -159,7 +163,7 @@ function Weapon:equip(bool, handler)
 	local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 	TweenService:Create(self.lerpValues.equip, tweenInfo, {Value = 0}):Play()
 
-	if self.weaponHolder.Receiver:FindFirstChild("EquipSound") then
+	if self.weaponHolder:FindFirstChild("Receiver") and self.weaponHolder.Receiver:FindFirstChild("EquipSound") then
 		self.weaponHolder.Receiver.EquipSound:Play()
 	end
 
@@ -176,6 +180,7 @@ end
 
 -- Unequip the weapon
 function Weapon:unequip()
+	if self.disabled then return end
 	self:aim(false)
 	self:fire(false)
 	self.equipped = false
@@ -186,7 +191,7 @@ function Weapon:unequip()
 	task.spawn(function()
 		equipWeaponFunc:InvokeServer(self.name, false)
 	end)
-	if self.weaponHolder:FindFirstChild("Receiver") and self.weaponHolder.Receiver:FindFirstChild("UnequipSound") then
+	if self.weaponHolder and self.weaponHolder:FindFirstChild("Receiver") and self.weaponHolder.Receiver:FindFirstChild("UnequipSound") then
 		self.weaponHolder.Receiver.UnequipSound:Play()
 	end
 	-- Destroy the viewmodel, which also destroys the gun, and set equipped to false
@@ -236,6 +241,7 @@ function Weapon:fire(bool)
 	end
 
 	local function fire()
+		if not self.weaponHolder or not self.weaponHolder:FindFirstChild("Receiver") then return end
 		if self.ammo <= 0 then 
 			if self.weaponHolder.Receiver:FindFirstChild("NoAmmoSound") then
 				self.weaponHolder.Receiver.NoAmmoSound:Play()
@@ -259,18 +265,21 @@ function Weapon:fire(bool)
 			end
 		end	
 
+		-- Get the origin and velocity of the bullet
+		-- If we are sniping, line the origin and direction up from the camera to make the sight work
+		local origin = self.lerpValues.sniperAim.Value == 1 and self.camera.CFrame.Position or self.weaponHolder.Barrel.Position
+		local bulletDirection = self.lerpValues.sniperAim.Value == 1 and self.camera.CFrame.LookVector.Unit or (self.weaponHolder.Muzzle.Position - origin).Unit
+		local initialVelocity = bulletDirection * self.settings.velocity
+
+		-- Tell the server we have fired a bullet
+		local timeNow = tick()
+		fireWeaponEvent:FireServer(self.name, origin, initialVelocity, self.ammo, timeNow)
+
 		-- Take one round out of the ammo every time we fire
 		self.ammo -= 1
 		ammoChanged:Fire(self.ammo, self.spareBullets)
 
 		-- Render a real bullet for visuals
-		local origin = self.weaponHolder.Barrel.Position
-		local bulletDirection = (self.weaponHolder.Muzzle.Position - origin).Unit
-
-		local initialVelocity = bulletDirection * self.settings.velocity
-		-- Tell the server we have fired a bullet
-		fireWeaponEvent:FireServer(self.name, origin, initialVelocity)
-
 		local bullet = ReplicatedStorage.Assets.Other.Bullet:Clone()
 		bullet.Size = Vector3.new(0.05, 0.05, self.settings.velocity / 200)
 		bullet.CFrame = CFrame.new(origin + bulletDirection * bullet.Size.Z, origin + bulletDirection * bullet.Size.Z * 2)
@@ -282,6 +291,7 @@ function Weapon:fire(bool)
 			CollectionService:GetTagged("Accessory");
 			CollectionService:GetTagged("Weapon");
 			CollectionService:GetTagged("Foliage");
+			workspace.Bullets;
 		}
 		-- Fire a raycast bullet to calculate actual hits
 		self.hitDetector:fire(origin, initialVelocity, gravity, self.settings.range, "Blacklist", filterInstances, bullet)
@@ -322,7 +332,17 @@ function Weapon:aim(bool)
 		self.loadedAnimations.aim:Play()
 		TweenService:Create(self.lerpValues.aim, tweenInfo, properties):Play()
 		TweenService:Create(self.lerpValues.walkspeed, tweenInfo, properties):Play()
+		if not self.settings.isSniper then return end
+		task.delay((0.7 / (self.settings.aimSpeed or 1)) * 0.95, function()
+			if not self.aiming then return end
+			sniperAimEvent:Fire(true, 10)
+			self.lerpValues.sniperAim.Value = 1
+		end)
 	else
+		if self.settings.isSniper then
+			sniperAimEvent:Fire(false, 70)
+			self.lerpValues.sniperAim.Value = 0
+		end
 		local tweenInfo = TweenInfo.new(0.7 / (self.settings.aimSpeed or 1), Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		local properties = {Value = 0}
 		self.loadedAnimations.aim:Stop()
@@ -335,12 +355,12 @@ end
 function Weapon:reload()
 	if self.reloading or self.disabled then return end
 	if self.ammo == self.settings.magCapacity or self.spareBullets <= 0 then 
-		if self.spareBullets <= 0 and self.weaponHolder.Receiver:FindFirstChild("NoAmmoSound") then
+		if self.spareBullets <= 0 and self.weaponHolder:FindFirstChild("Receiver") and self.weaponHolder.Receiver:FindFirstChild("NoAmmoSound") then
 			self.weaponHolder.Receiver.NoAmmoSound:Play()
 		end
 		return 
 	end
-	if not self.equipped then return end
+	if not self.equipped or not self.weaponHolder:FindFirstChild("Receiver") then return end
 	-- Cancel shooting
 	if self.firing then
 		self:fire(false)
@@ -431,6 +451,9 @@ end
 -- For this we just want to swap out the gun for the equipment and then run the relevant functions for that equipment
 function Weapon:useEquipment(handler)
 	if not handler.currentEquipment or handler.numEquipment <= 0 then return end
+	if not self.weaponHolder or not self.weaponHolder:FindFirstChild("Receiver") then return end
+	if not self.equipmentHolder then return end
+	if self.gameStatus.Value ~= "GameRunning" then return end
 	self:fire(false)
 	self:aim(false)
 	-- Disable the gun
@@ -451,6 +474,7 @@ function Weapon:useEquipment(handler)
 	TweenService:Create(self.lerpValues.equip, tweenInfo, {Value = 1}):Play()
 
 	task.wait(0.6)
+	if not self.viewmodel or self.gameStatus.Value ~= "GameRunning" then return end
 	-- Hide the gun
 	self:hide(true)
 	self.loadedAnimations.idle:Stop()
@@ -477,13 +501,13 @@ function Weapon:useEquipment(handler)
 	
 	-- Play the holding and getting equipment out animations 
 	holdAnim:Play()
-	task.delay(getOutAnim.Length * 0.5, function()
+	task.delay(getOutAnim.Length * 0.25, function()
 		-- Play unlatch sound for grenade
-		if self.equipmentHolder.Receiver:FindFirstChild("UnlatchSound") then
+		if self.equipmentHolder:FindFirstChild("Receiver") and self.equipmentHolder.Receiver:FindFirstChild("UnlatchSound") then
 			self.equipmentHolder.Receiver.UnlatchSound:Play()
 		end
 	end)
-	getOutAnim:Play()
+	getOutAnim:Play(nil, nil, 2)
 
 	-- Tween the equipment offset in
 	TweenService:Create(self.lerpValues.equipmentHold, tweenInfo, {Value = 1}):Play()
@@ -497,6 +521,8 @@ function Weapon:useEquipment(handler)
 			task.wait()
 		end
 	end
+
+	if not self.equipmentHolder:FindFirstChild("Receiver") then return end
 
 	-- Play throwing sound
 	if self.equipmentHolder.Receiver:FindFirstChild("ThrowSound") then
@@ -637,12 +663,12 @@ end
 -- Connects the listeners for this weapon
 function Weapon:connectListeners()
 	-- Connect a listener to the hit event so we can do damage etc
-	self.maid:GiveTask(self.hitDetector.hitEvent.Event:Connect(function(part)
+	self.maid:GiveTask(self.hitDetector.hitEvent.Event:Connect(function(part, path)
 		-- Could add a particle effect here to add blood splatters etc
 		if part.Parent and part.Parent:FindFirstChild("Humanoid") and part.Parent.Humanoid.Health > 0 then
 			-- Fire a bindable to tell the UI to show hitmarkers
 			hitPlayerEvent:Fire(part)
-			playerHitEvent:FireServer(self.name, 1, part)
+			playerHitEvent:FireServer(self.name, self.ammo, self.spareBullets, part, path)
 		end
 	end))
 
@@ -711,8 +737,11 @@ function Weapon:update(dt)
 		local sprintOffset = aimOffset:lerp(self.weaponHolder.Offsets.Sprint.Value, self.lerpValues.sprint.Value)
 		-- Add equipment offsets for if we are holding equipment
 		local equipmentOffset = if self.equipmentHolder:FindFirstChild("Offsets") then sprintOffset:lerp(self.equipmentHolder.Offsets.Hold.Value, self.lerpValues.equipmentHold.Value) else sprintOffset
+		-- Apply the sniper aim offset
+		local sniperOffset = equipmentOffset:lerp(self.weaponHolder.Offsets.Aim.Value * CFrame.new(0, 0, -5), self.lerpValues.sniperAim.Value)
 		-- Apply the equipping offset
-		local equipOffset = equipmentOffset:lerp(self.weaponHolder.Offsets.Equip.Value, self.lerpValues.equip.Value)
+		local equipOffset = sniperOffset:lerp(self.weaponHolder.Offsets.Equip.Value, self.lerpValues.equip.Value)
+		
 		local finalOffset = equipOffset
 
 		-- Allows us to reduce the players walkspeed by changing the walkspeed lerp value while we are aiming
@@ -784,6 +813,14 @@ function Weapon:destroy()
 	self.disabled = true
 	-- Disconnect inputs
 	self:disconnectInput()
+	if self.settings.isSniper then
+		sniperAimEvent:Fire(false, 70)
+		self.lerpValues.sniperAim.Value = 0
+	end
+	if self.diedConnection then
+		self.diedConnection:Disconnect()
+		self.diedConnection = nil
+	end
 	-- Destroy the viewmodel, which also destroys the gun, and set equipped to false
 	UserInputService.MouseIconEnabled = true
 	-- Stop all animations

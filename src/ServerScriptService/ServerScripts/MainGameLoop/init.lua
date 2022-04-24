@@ -1,6 +1,7 @@
 -- Runs the main game loop
 local Players = game:GetService("Players")
 local CollectionService = game:GetService("CollectionService")
+local ServerStorage = game:GetService("ServerStorage")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framework))
@@ -22,22 +23,47 @@ local MainGameLoop = {
 	spawnedPlayers = {};
 }
 
+local VOTE_MAP_TIME = 250
+
 -- Starts the main game loop which loads/unloads maps and starts/ends rounds (the initiate function is called when the module is loaded in ModuleScriptLoader)
 function MainGameLoop:initiate()
 	self:createGameValues()
 	self.gameRunning = true
 	task.spawn(function()
 		while self.gameRunning do
+			if #ServerStorage.Maps:GetChildren() > 1 then
+				local maps = MapHandler:getMapsToVote()
+				for _, map in pairs(maps) do
+					local newMapVal = Instance.new("IntValue", self.mapsToVote)
+					newMapVal.Name = map
+				end
+				self.gameStatus.Value = "MapVoting"
+				self.mapVotesTimer.Value = VOTE_MAP_TIME
+				while self.mapVotesTimer.Value > 0  do
+					if self.mapVotes:FindFirstChild("SuperVote") then
+						break
+					end
+					task.wait(1)
+					self.mapVotesTimer.Value -= 1
+				end
+			end
 			task.wait(1)
 			self.gameStatus.Value = "ChoosingMap"
 			-- Choose the map
 			local mapLoaded, err = pcall(function()
-				MapHandler:chooseMap()
+				MapHandler:chooseMap(self.mapVotes:FindFirstChild("SuperVote"))
 			end)
 			if not mapLoaded then 
 				-- If the maps fails to load, start a new round and hope it loads next time
 				warn(err)
 				continue
+			end
+
+			-- Clear the map votes
+			self.mapsToVote:ClearAllChildren()
+			if self.mapVotes:FindFirstChild("SuperVote") then
+				task.wait(2)
+				self.mapVotes:FindFirstChild("SuperVote"):Destroy()
 			end
 
 			self.gameStatus.Value = "ChoosingGamemode"
@@ -64,10 +90,10 @@ function MainGameLoop:initiate()
 
 			-- Tell all players to display the winners, then if anyone new joins, they can just wait for gameStatus to change back to choosing map
 			gameOverEvent:FireAllClients("ShowLeaderboard", winner)
+			task.wait(2)
 			self.gameStatus.Value = "GameOver"
 			self.currentMode = nil
 			self.currentGamemode.Value = ""
-			self.spawnedPlayers = {}
 
 			task.wait(5)
 
@@ -77,6 +103,13 @@ function MainGameLoop:initiate()
 			task.wait(2)
 
 			Leaderboard:clearScores()
+			for _, plrInfo in pairs(self.spawnedPlayers) do
+				if plrInfo.diedConnection then
+					plrInfo.diedConnection:Disconnect()
+					print("died connection cleaned up")
+				end
+			end
+			self.spawnedPlayers = {}
 			-- Unload the map
 			local mapUnloaded, err = pcall(function()
 				MapHandler:unloadMap()
@@ -100,9 +133,23 @@ function MainGameLoop:createGameValues()
 	currentMode.Name = "CurrentMode"
 	local roundType = Instance.new("StringValue", gameValues)
 	roundType.Name = "RoundType"
+
 	self.gameStatus = gameStatus
 	self.currentGamemode = currentMode
 	self.roundType = roundType
+
+	local mapVotes = Instance.new("Folder", ReplicatedStorage)
+	mapVotes.Name = "MapVotes"
+	local timer = Instance.new("IntValue", mapVotes)
+	timer.Name = "Timer"
+	local totalVotes = Instance.new("IntValue", mapVotes)
+	totalVotes.Name = "TotalVotes"
+	local maps = Instance.new("Folder", mapVotes)
+	maps.Name = "Maps"
+
+	self.mapVotes = mapVotes
+	self.mapVotesTimer = timer
+	self.mapsToVote = maps
 end
 
 -- When the player clicks spawn on their kit selection screen, spawn them into the game with their chosen kit
@@ -120,6 +167,10 @@ function MainGameLoop:spawnPlayer(player, chosenKit)
 			end
 			local diedConnection
 			diedConnection = player.Character.Humanoid.Died:Connect(function()
+				if self.gameStatus.Value == "GameRunning" then
+					Leaderboard:incrementScore(player, "Deaths", 1)
+				end
+				playerKilledRemote:FireAllClients(player.Name, player.Name)
 				diedConnection:Disconnect()
 				diedConnection = nil
 				self.spawnedPlayers[tostring(player.UserId)] = nil
@@ -136,8 +187,9 @@ end
 -- When a player is killed, we run the playerKilled function for the current gamemode
 function MainGameLoop.playerKilled(killer, victim, weapon)
 	if not killer or not victim or MainGameLoop.gameStatus.Value ~= "GameRunning" then return end
+	-- Won't let you kill yourself to get kills
+	if killer == victim then return end
 	-- Increment the killer and victims scores
-	Leaderboard:incrementScore(victim, "Deaths", 1)
 	if Players:FindFirstChild(killer.Name) then
 		Leaderboard:incrementScore(Players:FindFirstChild(killer.Name), "Kills", 1)
 	end

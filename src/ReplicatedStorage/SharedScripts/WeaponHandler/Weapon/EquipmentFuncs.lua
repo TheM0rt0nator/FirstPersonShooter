@@ -27,6 +27,8 @@ local SMOKE_TIMER = 8
 
 -- General throwing function to be used by and equipment
 function EquipmentFuncs.throw(args)
+	local gameStatus = ReplicatedStorage.GameValues.GameStatus
+	if gameStatus.Value ~= "GameRunning" then return end
 	local settings = args.settings
 	-- If we have a handler, that means this is the client that threw the grenade, and we don't want to invoke the server on replicated clients
 	local isReplicated = args.handler == nil
@@ -61,7 +63,7 @@ function EquipmentFuncs.throw(args)
 	if not isReplicated then
 		-- Send to the server to invalidate or replicate to others
 		task.spawn(function()
-			local success = useEquipmentFunc:InvokeServer(primaryPart.Position, velocity, tick(), args.handler.currentEquipment.Name, args.handler.numEquipment)
+			local success = useEquipmentFunc:InvokeServer(primaryPart.Position, velocity, os.time(), args.handler.currentEquipment.Name, args.handler.numEquipment)
 			if not success then
 				newGrenade:Destroy()
 			end
@@ -73,9 +75,13 @@ function EquipmentFuncs.throw(args)
 		CollectionService:GetTagged("Accessory");
 		CollectionService:GetTagged("Weapon");
 		CollectionService:GetTagged("Foliage");
-		camera:FindFirstChild("ViewModel");
 		newGrenade;
+		workspace.Bullets;
 	}
+
+	if camera:FindFirstChild("ViewModel") then
+		table.insert(ignoreList, camera:FindFirstChild("ViewModel"))
+	end
 
 	newGrenade.Parent = workspace
 
@@ -83,15 +89,18 @@ function EquipmentFuncs.throw(args)
 		if newGrenade:FindFirstChild("Main") and newGrenade.Main:FindFirstChild("Trail") then
 			newGrenade.Main:FindFirstChild("Trail").Enabled = true
 		end
+		local ballPart = newGrenade:FindFirstChild("Handle")
 		-- Had to use this custom trajectory calculation because Roblox physics are unreliable (grenade would go different ways on different clients)
-		local path = trajectory:Cast(args.origin or primaryPart.Position, velocity, Enum.Material.Plastic, ignoreList)
-		trajectory:Travel(primaryPart, path)
+		local path = trajectory:Cast(args.origin or ballPart.Position, velocity, Enum.Material.Plastic, ignoreList)
+		trajectory:Travel(ballPart, path)
 	end)
 	return newGrenade
 end
 
 -- When we throw the M62, just set it's velocity, wait a certain time and then explode and find the players near it (this function also support replication)
 function EquipmentFuncs.FragGrenadethrow(args)
+	local gameStatus = ReplicatedStorage.GameValues.GameStatus
+	if gameStatus.Value ~= "GameRunning" then return end
 	local isReplicated = args.handler == nil
 	local settings = require(fragGrenade:FindFirstChild("Settings"))
 	
@@ -100,31 +109,41 @@ function EquipmentFuncs.FragGrenadethrow(args)
 	local newGrenade = EquipmentFuncs.throw(args)
 	local primaryPart = newGrenade:FindFirstChild("Receiver")
 
-	-- Take the ping away from the time till explosion if it is a replicated grenade
-	local timeTilExplode = GRENADE_TIMER
-	if isReplicated and args.origin and args.timeThrown then
-		newGrenade:SetPrimaryPartCFrame(CFrame.new(args.origin))
-		local timePassed = tick() - args.timeThrown
-		timeTilExplode -= timePassed
-	end
-
 	local ignoreList = {
 		CollectionService:GetTagged("Accessory");
 		CollectionService:GetTagged("Weapon");
-		camera:FindFirstChild("ViewModel");
+		CollectionService:GetTagged("Foliage");
 		newGrenade;
+		workspace.Bullets;
 	}
 
-	task.delay(timeTilExplode, function()
+	if camera:FindFirstChild("ViewModel") then
+		table.insert(ignoreList, camera:FindFirstChild("ViewModel"))
+	end
+
+	task.delay(GRENADE_TIMER, function()
+		if not newGrenade.Parent then return end
 		-- Create explosion and destroy the grenade
 		local explosion = Instance.new("Explosion")
 		explosion.Position = primaryPart.Position
 		explosion.BlastRadius = 0
 		explosion.Parent = game.Workspace
+		local newSoundPart = Instance.new("Part")
+		newSoundPart.Anchored = true
+		newSoundPart.Position = primaryPart.Position
+		newSoundPart.CanCollide = false
+		newSoundPart.Size = Vector3.new(0.1, 0.1, 0.1)
+		newSoundPart.Transparency = 1
+		newSoundPart.Parent = workspace	
+		primaryPart:FindFirstChild("ExplodeSound").Parent = newSoundPart
+		newSoundPart:FindFirstChild("ExplodeSound"):Play()
 		newGrenade:Destroy()
 		task.delay(1, function()
 			explosion:Destroy()
-		end)	
+		end)
+		task.delay(4, function()
+			newSoundPart:Destroy()
+		end)
 
 		if not isReplicated then
 			local hitPlayers = {}
@@ -143,7 +162,7 @@ function EquipmentFuncs.FragGrenadethrow(args)
 				end
 			end
 			if #hitPlayers > 0 then
-				playerHitByEquipment:FireServer(hitPlayers, "Frag Grenade")
+				playerHitByEquipment:FireServer(hitPlayers, "Frag Grenade", explosion.Position, args.handler.numEquipment)
 			end
 		end
 	end)
@@ -151,7 +170,8 @@ end
 
 -- Same as M62 but doesn't explode just releases smoke
 function EquipmentFuncs.SmokeGrenadethrow(args)
-	local isReplicated = args.handler == nil
+	local gameStatus = ReplicatedStorage.GameValues.GameStatus
+	if gameStatus.Value ~= "GameRunning" then return end
 	local settings = require(smokeGrenade:FindFirstChild("Settings"))
 	
 	args.settings = settings
@@ -159,21 +179,11 @@ function EquipmentFuncs.SmokeGrenadethrow(args)
 	local newGrenade = EquipmentFuncs.throw(args)
 	local primaryPart = newGrenade:FindFirstChild("Receiver")
 
-	-- Take the ping away from the time till explosion if it is a replicated grenade
-	local timeTilSmoke = 2
-	if isReplicated and args.origin and args.timeThrown then
-		newGrenade:SetPrimaryPartCFrame(CFrame.new(args.origin))
-		local timePassed = tick() - args.timeThrown
-		timeTilSmoke -= timePassed
-	end
-
-	task.delay(timeTilSmoke, function()
+	task.delay(2, function()
 		primaryPart:FindFirstChild("SmokeParticles").Enabled = true
 		if primaryPart:FindFirstChild("ExplodeSound") then
 			primaryPart:FindFirstChild("ExplodeSound"):Play()
 		end
-		task.wait(SMOKE_TIMER)
-		-- Put particles inside a separate part so that the particles don't just instantly disappear
 		local newSmokePart = Instance.new("Part")
 		newSmokePart.Anchored = true
 		newSmokePart.Position = primaryPart.Position
@@ -182,6 +192,9 @@ function EquipmentFuncs.SmokeGrenadethrow(args)
 		newSmokePart.Size = Vector3.new(0.1, 0.1, 0.1)
 		newSmokePart.Parent = workspace
 		primaryPart:FindFirstChild("SmokeParticles").Parent = newSmokePart
+		primaryPart.Anchored = true
+		task.wait(SMOKE_TIMER)
+		-- Put particles inside a separate part so that the particles don't just instantly disappear
 		primaryPart:FindFirstChild("ExplodeSound").Parent = newSmokePart
 		newSmokePart:FindFirstChild("SmokeParticles").Enabled = false
 		newGrenade:Destroy()
@@ -193,7 +206,8 @@ end
 
 -- Same as others but when it explodes, we fire a flashbang event to make players screens go white depending on their distance / look vector from the flashbang
 function EquipmentFuncs.Flashbangthrow(args)
-	local isReplicated = args.handler == nil
+	local gameStatus = ReplicatedStorage.GameValues.GameStatus
+	if gameStatus.Value ~= "GameRunning" then return end
 	local settings = require(flashbang:FindFirstChild("Settings"))
 	
 	args.settings = settings
@@ -201,15 +215,7 @@ function EquipmentFuncs.Flashbangthrow(args)
 	local newGrenade = EquipmentFuncs.throw(args)
 	local primaryPart = newGrenade:FindFirstChild("Receiver")
 
-	-- Take the ping away from the time till explosion if it is a replicated grenade
-	local timeTilExplode = GRENADE_TIMER
-	if isReplicated and args.origin and args.timeThrown then
-		newGrenade:SetPrimaryPartCFrame(CFrame.new(args.origin))
-		local timePassed = tick() - args.timeThrown
-		timeTilExplode -= timePassed
-	end
-
-	task.delay(timeTilExplode, function()
+	task.delay(GRENADE_TIMER, function()
 		if primaryPart:FindFirstChild("ExplodeSound") then
 			local newSoundPart = Instance.new("Part")
 			newSoundPart.Anchored = true

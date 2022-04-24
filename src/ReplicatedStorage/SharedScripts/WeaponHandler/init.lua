@@ -24,12 +24,15 @@ local Keybinds = loadModule("Keybinds")
 local UserInput = loadModule("UserInput")
 local EquipmentFuncs = loadModule("EquipmentFuncs")
 local String = loadModule("String")
+local Trajectory = loadModule("Trajectory")
 local CameraTypes = RunService:IsClient() and loadModule("CameraTypes")
+local CharacterManager = loadModule("CharacterManager")
 
 local setInterfaceState = RunService:IsClient() and getDataStream("SetInterfaceState", "BindableEvent")
 
 local gravity = Vector3.new(0, workspace.Gravity, 0)
 local camera = workspace.CurrentCamera
+local trajectory = Trajectory.new(Vector3.new(0, -game.Workspace.Gravity, 0))
 
 local WeaponHandler = {
 	MAX_WEAPONS = 2;
@@ -69,11 +72,13 @@ function WeaponHandler.setEquippedKit(player, kit)
 		CollectionService:AddTag(secondaryWeapon, "Weapon")
 
 		-- Could add code here to edit settings for the gun (larger or more magazines etc)
+		local equippedEquipment = WeaponKits[kit].Equipment[1]
 		
 		WeaponHandler.players[tostring(player.UserId)] = {
 			currentKit = kit;
 			equipped = "primary";
-			equippedEquipment = WeaponKits[kit].Equipment[1];
+			equippedEquipment = equippedEquipment;
+			equipmentSettings = require(ReplicatedStorage.Assets.Equipment[equippedEquipment.Name].Settings);
 			equipmentAmmo = WeaponKits[kit].Equipment[1].Amount;
 			weapons = {
 				primary = {
@@ -172,6 +177,13 @@ function WeaponHandler.equipWeapon(player, weapon, bool)
 	if not playersVals.weapons[playersVals.equipped] then return end
 	local weaponModel = playersVals.weapons[playersVals.equipped].model
 
+	-- If there is no weapon model anymore, cancel animations and return probably died during equipping
+	if not weaponModel or not weaponModel.Parent or not weaponModel:FindFirstChild("Receiver") then 
+		for _, anim in pairs(playersVals.weapons[playersVals.equipped].loadedAnimations) do
+			anim:Stop()
+		end
+		return 
+	end
 	-- Equip
 	if bool then
 		-- Unholster the gun and weld it to the players hand
@@ -209,26 +221,6 @@ function WeaponHandler.reloadWeapon(player, weapon, clientAmmo, clientSpare)
 	return true
 end
 
--- When a player fires a weapon, make sure they have enough ammo and replicate to other players
-function WeaponHandler.fireWeapon(player, weapon, origin, velocity)
-	local playersVals, hasWeapon = WeaponHandler.weaponCheck(player, weapon)
-	if not hasWeapon then return end
-	-- Check the origin is close to the player
-	-- Check the time since the last fire is long enough
-	-- Check the velocity isn't too high
-	-- If server says they have no ammo, they have no ammo and don't do anything
-	if playersVals.weapons[playersVals.equipped].magData.ammo <= 0 then return end
-	-- Take one away from the server ammo
-	playersVals.weapons[playersVals.equipped].magData.ammo -= 1
-
-	fireWeaponEvent:FireAllClients(player, origin, velocity, weapon)
-	if playersVals.aiming then 
-		playersVals.weapons[playersVals.equipped].loadedAnimations.aimFire:Play()	
-	else
-		playersVals.weapons[playersVals.equipped].loadedAnimations.idleFire:Play()
-	end
-end
-
 -- When a player aims their weapon, make sure they have that weapon equipped and then play the aim animation on the server
 function WeaponHandler.aimWeapon(player, weapon, bool)
 	local playersVals, hasWeapon = WeaponHandler.weaponCheck(player, weapon)
@@ -243,11 +235,87 @@ function WeaponHandler.aimWeapon(player, weapon, bool)
 	end	
 end
 
--- When a player is hit, need to check to make sure the hit is valid and then deal damage
-function WeaponHandler.playerHit(player, weapon, bulletNum, hitPart)
+-- When a player fires a weapon, make sure they have enough ammo and replicate to other players
+function WeaponHandler.fireWeapon(player, weapon, origin, velocity, clientAmmo, timeFired)
+	local playersVals, hasWeapon = WeaponHandler.weaponCheck(player, weapon)
+	if not hasWeapon then return end
+	local equippedGunVals = playersVals.weapons[playersVals.equipped]
+	-- If server says they have no ammo, they have no ammo and don't do anything
+	if equippedGunVals.magData.ammo <= 0 then return end
+	-- Check the origin is close to the player
+	if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+	if (player.Character.HumanoidRootPart.Position - origin).Magnitude > 10 then return end
+	local timeNow = tick()
+	local weaponSettings = equippedGunVals.settings
+	-- Check the time since the last fire is long enough
+	if not playersVals.lastFire then
+		playersVals.lastFire = timeNow
+	elseif (timeNow - playersVals.lastFire) < (60 * 0.9) / weaponSettings.rpm then 
+		return
+	end
+	-- Check the velocity isn't too high
+	if velocity.Magnitude > weaponSettings.velocity * 1.05 then return end
+	-- Make sure client ammo is synced up with server ammo
+	if clientAmmo ~= equippedGunVals.magData.ammo then return end
+	-- Take one away from the server ammo
+	equippedGunVals.magData.ammo -= 1
+	fireWeaponEvent:FireAllClients(player, origin, velocity, weapon)
+	if playersVals.aiming then 
+		equippedGunVals.loadedAnimations.aimFire:Play()	
+	else
+		equippedGunVals.loadedAnimations.idleFire:Play()
+	end
+end
+
+-- When a player throws equipment, we need to check that they are allowed to throw the specified equipment and that the velocity isn't too high and the origin is near the player
+function WeaponHandler.useEquipment(player, origin, velocity, timeThrown, equipmentName, clientAmmo)
+	local playersVals, hasEquipment = WeaponHandler.equipmentCheck(player, equipmentName)
+	if not hasEquipment or not player.Character then return end
+	-- If server says they have no ammo, they have no ammo and don't do anything
+	if playersVals.equipmentAmmo <= 0 then return end
+	-- Check the origin is close to the player
+	if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+	if (player.Character.HumanoidRootPart.Position - origin).Magnitude > 10 then return end
+	local timeNow = tick()
+	-- Check the time since the last fire is long enough
+	if not playersVals.lastEquipmentUse then
+		playersVals.lastEquipmentUse = timeNow
+	elseif (timeNow - playersVals.lastEquipmentUse) < 1 then
+		return
+	end
+	-- Check the velocity isn't too high
+	if velocity.Magnitude > (playersVals.equipmentSettings.velocity + playersVals.equipmentSettings.verticalVelocityAddition.Y) * 1.05 then return end
+	-- Check client ammo is equal to server ammo
+	if clientAmmo ~= (playersVals.equipmentAmmo - 1) then return end
+	-- If we can use the equipment, reduce the ammo by 1 on the server
+	playersVals.equipmentAmmo -= 1
+	useEquipmentEvent:FireAllClients(player, origin, velocity, equipmentName, timeThrown)
+	return true
+end
+
+--[[ 
+	- When a player is hit, need to check to make sure the hit is valid and then deal damage
+	- If an exploiter fires this remote without firing the fire weapon remote, the ammo won't be synced so it won't deal damage
+	- If an exploiter fires this remote after firing the fire weapon remote successfully, they will successfully exploit
+	- All we can do is small checks like they fired in the general direction of the hit player and there are no walls along the path (client can still fabricate the path - need to find another way)
+]]
+function WeaponHandler.playerHit(player, weapon, clientAmmo, clientSpare, hitPart, path)
+	-- Check game is running
 	local gameStatus = ReplicatedStorage:WaitForChild("GameValues"):WaitForChild("GameStatus")
 	if not gameStatus or gameStatus.Value ~= "GameRunning" then return end
-	if hitPart.Parent and hitPart.Parent:FindFirstChild("Humanoid") and hitPart.Parent.Humanoid.Health > 0 then--and Players:FindFirstChild(hitPart.Parent.Name) then
+	-- Check they have the weapon
+	local playersVals, hasWeapon = WeaponHandler.weaponCheck(player, weapon)
+	if not hasWeapon or not playersVals then return end
+	-- Check the ammo syncs up (maybe remove this? not sure if it verifies anything)
+	local equippedGunVals = playersVals.weapons[playersVals.equipped]
+	if equippedGunVals.magData.ammo ~= clientAmmo or equippedGunVals.magData.spare ~= clientSpare then return end
+	-- Check to make sure the path doesn't go through any walls
+	if not ProjectileRender:checkPath(path) then return end
+	-- Check to make sure the hitPoint on the path is close enough to the player (this will stop people with extremely high latency from damaging players, but this is something we can't change)
+	local hitPoint = path.segments[#path.segments].hitPoint
+	if not hitPoint or not hitPart or (hitPart.Position - hitPoint).Magnitude > 10 then return end
+	-- Check the hit player is alive
+	if hitPart.Parent and hitPart.Parent:FindFirstChild("Humanoid") and hitPart.Parent.Humanoid.Health > 0 and Players:FindFirstChild(hitPart.Parent.Name) then
 		local playersVals = WeaponHandler.players[tostring(player.UserId)]
 		local weaponsStats = playersVals.weapons[playersVals.equipped].settings
 		local damage = (hitPart.Name == "Head" and weaponsStats.headshot) or weaponsStats.damage
@@ -259,39 +327,32 @@ function WeaponHandler.playerHit(player, weapon, bulletNum, hitPart)
 end
 
 -- When a player is hit, need to check to make sure the hit is valid and then deal damage
-function WeaponHandler.playerHitByEquipment(player, hitPlayers, equipmentName)
+function WeaponHandler.playerHitByEquipment(player, hitPlayers, equipmentName, grenadePos, ammo)
+	local playersVals, hasEquipment = WeaponHandler.equipmentCheck(player, equipmentName)
+	if not hasEquipment then return end
 	local gameStatus = ReplicatedStorage:WaitForChild("GameValues"):WaitForChild("GameStatus")
 	if not gameStatus or gameStatus.Value ~= "GameRunning" then return end
 	if not WeaponHandler.players[tostring(player.UserId)] or not ReplicatedStorage.Assets.Equipment:FindFirstChild(equipmentName) then return end
+	-- Check the ammos are synced up
+	if ammo ~= playersVals.equipmentAmmo then return end
 	local settings = require(ReplicatedStorage.Assets.Equipment:FindFirstChild(equipmentName):FindFirstChild("Settings"))
+	local blastRadius = settings.blastRadius
 	for _, plrInfo in pairs(hitPlayers) do
 		if plrInfo.player 
 			and plrInfo.player.Character 
-			and plrInfo.player.Character:FindFirstChild("Humanoid") 
-			and plrInfo.player.Character.Humanoid.Health > 0 
+			and plrInfo.player.Character:FindFirstChild("Humanoid")
+			and plrInfo.player.Character.Humanoid.Health > 0
 		then
-			local damageFactor = (settings.blastRadius - plrInfo.dist) * (settings.damage / settings.blastRadius)
+			-- Check the distance to the grenade on the server
+			local distance = (grenadePos - plrInfo.player.Character.HumanoidRootPart.Position).Magnitude
+			if not grenadePos or distance > blastRadius + 10 then return end
+			local damageFactor = (blastRadius - distance) * (settings.damage / blastRadius)
 			plrInfo.player.Character.Humanoid:TakeDamage(damageFactor)
 			if plrInfo.player.Character.Humanoid.Health <= 0 then
 				playerKilledEvent:Fire(player, plrInfo.player, equipmentName)
 			end
 		end
 	end
-end
-
-
--- When a player throws equipment, we need to check that they are allowed to throw the specified equipment and that the velocity isn't too high and the origin is near the player
-function WeaponHandler.useEquipment(player, origin, velocity, timeThrown, equipmentName, clientAmmo)
-	local playersVals, hasEquipment = WeaponHandler.equipmentCheck(player, equipmentName)
-	if not hasEquipment or not player.Character then return end
-	-- Check the origin is close to the player
-	-- Check the time since the last fire is long enough
-	-- Check the velocity isn't too high
-	-- If we can use the equipment, reduce the ammo by 1 on the server
-	playersVals.equipmentAmmo -= 1
-	if clientAmmo ~= playersVals.equipmentAmmo then return end
-	useEquipmentEvent:FireAllClients(player, origin, velocity, equipmentName, timeThrown)
-	return true
 end
 
 
@@ -305,6 +366,10 @@ function WeaponHandler:setupWeapons(kit)
 	end
 	self.currentKit = kit
 	self.isUsingEquipment = false
+
+	-- Stop crouching and sprinting
+	CharacterManager.crouching = false
+	CharacterManager.isSprinting = false
 
 	-- Collect our equipment models (support for multiple equipment per kit, but not implemented switching between equipments)
 	self.storedEquipment = {}
@@ -341,21 +406,28 @@ function WeaponHandler:setupWeapons(kit)
 		self.equipped = "Primary"
 	end
 
+	local switchDebounce = false
+
 	-- Connect input for switching weapons (with scroll wheel)
 	for bindNum, keybind in ipairs(Keybinds["SwitchWeapons"]) do
 		local inputType = (keybind.EnumType == Enum.UserInputType and keybind) or Enum.UserInputType.Keyboard
 		local keyCode = keybind.EnumType == Enum.KeyCode and keybind
 		UserInput.connectInput(inputType, keyCode, "SwitchWeapons" .. bindNum, {
-			endedFunc = function()
-				local switchFrom = self.equipped
-				local switchTo = switchFrom == "Primary" and "Secondary" or "Primary"
-				local fromWeaponObj = self.weaponObjects[switchFrom]
-				local toWeaponObj = self.weaponObjects[switchTo]
-				if not toWeaponObj.equipped and not self.isUsingEquipment then
-					fromWeaponObj:unequip()
-					task.wait(.3)
-					toWeaponObj:equip(true, self)
-					self.equipped = switchTo
+			changedFunc = function()
+				if not switchDebounce then 
+					switchDebounce = true
+					local switchFrom = self.equipped
+					local switchTo = switchFrom == "Primary" and "Secondary" or "Primary"
+					local fromWeaponObj = self.weaponObjects[switchFrom]
+					local toWeaponObj = self.weaponObjects[switchTo]
+					if not toWeaponObj.equipped and not self.isUsingEquipment then
+						fromWeaponObj:unequip()
+						task.wait(.3)
+						toWeaponObj:equip(true, self)
+						self.equipped = switchTo
+					end
+					task.wait(1)
+					switchDebounce = false
 				end
 			end;
 		}, true)
@@ -389,7 +461,7 @@ function WeaponHandler:setupWeapons(kit)
 		Players.LocalPlayer.CharacterAdded:Wait()
 		setInterfaceState:Fire("kitSelection")
 		CameraTypes:setCameraType("Scriptable")
-		camera.CFrame = CFrame.new(0, 0, 0)
+		camera.CFrame = CFrame.new((workspace.HomeScreen.PrimaryPart.CFrame + Vector3.new(0, 10, 0)).Position, workspace.HomeScreen.PrimaryPart.CFrame.Position)
 	end)
 	setInterfaceState:Fire("inGame")
 end
@@ -420,6 +492,12 @@ function WeaponHandler.gameOver(type)
 	if type == "ShowLeaderboard" then
 		if not WeaponKits[WeaponHandler.currentKit] then return end
 		for weaponNum, _ in pairs(WeaponKits[WeaponHandler.currentKit].Weapons) do
+			-- Disconnects all the inputs from keybinds module to equip weapons
+			for bindNum, keybind in ipairs(Keybinds["Equip" .. weaponNum]) do
+				local inputType = (keybind.EnumType == Enum.UserInputType and keybind) or Enum.UserInputType.Keyboard
+				UserInput.disconnectInput(inputType, "EquipWeapon" .. weaponNum .. bindNum)
+			end
+
 			-- Disable guns
 			local weaponObj = WeaponHandler.weaponObjects[weaponNum]
 			weaponObj:fire(false)
@@ -427,6 +505,13 @@ function WeaponHandler.gameOver(type)
 			weaponObj:sprint(false, true)
 			weaponObj.disabled = true
 		end
+
+		-- Disconnect equipment inputs
+		for bindNum, keybind in pairs(Keybinds.UseEquipment) do
+			local inputType = (string.find(keybind.Name, "Button") and Enum.UserInputType.Gamepad1) or Enum.UserInputType.Keyboard
+			UserInput.disconnectInput(inputType, "UseEquipment" .. bindNum)
+		end
+
 		-- Disable player input
 	elseif type == "UnloadingMap" then
 		-- Cleanup weapons, teleport player back to lobby send back to start screen

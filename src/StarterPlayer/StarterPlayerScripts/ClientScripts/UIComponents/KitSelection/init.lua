@@ -13,6 +13,7 @@ local KitInfoFrame = loadModule("KitInfoFrame")
 local KitButtonTemplate = loadModule("KitButtonTemplate")
 local WeaponKits = loadModule("WeaponKits")
 local WeaponHandler = loadModule("WeaponHandler")
+local MapVoting = loadModule("MapVoting")
 
 local camera = workspace.CurrentCamera
 
@@ -25,9 +26,19 @@ function KitSelection:init()
 	task.spawn(function()
 		self.gameStatus = ReplicatedStorage:WaitForChild("GameValues"):WaitForChild("GameStatus")
 		local text = if self.gameStatus.Value == "GameRunning" then "DEPLOY" else "INTERMISSION"
+		self.buttonVisible, self.setButtonVisible = Roact.createBinding(false)
+		if self.gameStatus.Value == "MapVoting" then
+			self.setButtonVisible(false)
+		end
 		self.buttonText, self.setButtonText = Roact.createBinding(text)
 		self.maid:GiveTask(self.gameStatus.Changed:Connect(function()
-			self.setButtonText(if self.gameStatus.Value == "GameRunning" then "DEPLOY" else "INTERMISSION")
+			local status = self.gameStatus.Value
+			self.setButtonText(if status == "GameRunning" then "DEPLOY" elseif status == "ChoosingMap" then "LOADING MAP" else "INTERMISSION")
+			if self.gameStatus.Value == "MapVoting" then
+				self.setButtonVisible(false)
+			else
+				self.setButtonVisible(true)
+			end
 		end))
 		self:setState({
 			currentKit = "Assault";
@@ -108,8 +119,8 @@ function KitSelection:render()
 				AnchorPoint = Vector2.new(0.5, 1);
 				Name = "KitButtonHolder";
 				BackgroundTransparency = 0.699999988079071;
-				Position = UDim2.new(0.5, 0, 1.016, 0);
-				Size = UDim2.new(0.7, 0, 0.178, 0);
+				Position = UDim2.new(0.5, 0, 0.095, 0);
+				Size = UDim2.new(0.45, 0, 0.074, 0);
 				BorderSizePixel = 0;
 				BackgroundColor3 = Color3.new(0.631, 0.631, 0.631);
 			}, {
@@ -130,12 +141,13 @@ function KitSelection:render()
 				FontSize = Enum.FontSize.Size14;
 				TextColor3 = Color3.new(0, 0, 0);
 				Text = self.buttonText;
-				AnchorPoint = Vector2.new(0.5, 0);
+				AnchorPoint = Vector2.new(0.5, 1);
 				Font = Enum.Font.Oswald;
 				Name = "SpawnButton";
-				Position = UDim2.new(0.5, 0, 0.77, 0);
-				Size = UDim2.new(0.1, 0, 0.06, 0);
+				Position = UDim2.new(0.5, 0, 0.98, 0);
+				Size = UDim2.new(0.15, 0, 0.1, 0);
 				TextScaled = true;
+				Visible = self.buttonVisible;
 				BackgroundColor3 = Color3.new(1, 1, 1);
 				[Roact.Event.MouseButton1Click] = function()
 					if not self.debounce and self.buttonText:getValue() == "DEPLOY" then
@@ -156,17 +168,18 @@ function KitSelection:render()
 				UICorner = UICorner(0.2, 0);
 			});
 
+			MapVoting = Roact.createElement(MapVoting);
 			
 			Title = Roact.createElement("TextLabel", {
 				FontSize = Enum.FontSize.Size14;
-				TextColor3 = Color3.new(0, 0, 0);
+				TextColor3 = Color3.new(1, 1, 1);
 				Text = "Call To Arms";
 				Name = "Title";
-				AnchorPoint = Vector2.new(0.5, 0);
+				AnchorPoint = Vector2.new(0, 1);
 				Font = Enum.Font.Oswald;
 				BackgroundTransparency = 1;
-				Position = UDim2.new(0.5, 0, 0, 0);
-				Size = UDim2.new(0.3, 0, 0.118, 0);
+				Position = UDim2.new(0, 0, 1, 0);
+				Size = UDim2.new(0.2, 0, 0.118, 0);
 				TextScaled = true;
 				BackgroundColor3 = Color3.new(1, 1, 1);
 			});

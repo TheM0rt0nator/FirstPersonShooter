@@ -29,8 +29,8 @@ return {
 	};
 	Recon = {
 		Weapons = {
-			Primary = "Intervention";
-			Secondary = "Desert Eagle";
+			Primary = "Sniper";
+			Secondary = "M1911A1";
 		};
 		Equipment = {
 			{

@@ -45,47 +45,24 @@ function HUD:init()
 		end
 		self.char = player.character
 		self.humanoid = self.char:WaitForChild("Humanoid")
-		local currentHealth = self.humanoid.Health
+		self.currentHealth = self.humanoid.Health
 		self.healthMotor:setGoal(Flipper.Instant.new(self.humanoid.Health / self.humanoid.MaxHealth))
 
 		-- Connect a listener to the players health to update the UI
 		self.healthConnection = self.humanoid.HealthChanged:Connect(function(health)
-			if health <= 0 then
-				self.setHealthVisible(false)
-			else
-				self.setHealthVisible(true)
-			end
-			if health > currentHealth then
-				self.healthMotor:setGoal(Flipper.Linear.new(self.humanoid.Health / self.humanoid.MaxHealth, {
-					velocity = self.motorVelocity;
-				}))
-			else
-				self.healthMotor:setGoal(Flipper.Instant.new(self.humanoid.Health / self.humanoid.MaxHealth))
-			end
-			currentHealth = health
+			self:healthChanged(health)
 		end)
 
 		-- Reset these values when the player gets a new character
 		self.maid:GiveTask(player.CharacterAdded:Connect(function(newChar)
 			self.char = newChar
 			self.humanoid = newChar:WaitForChild("Humanoid")
+			self.currentHealth = self.humanoid.Health
 
 			if self.healthConnection then
 				self.healthConnection:Disconnect()
 				self.healthConnection = self.humanoid.HealthChanged:Connect(function(health)
-					if health <= 0 then
-						self.setHealthVisible(false)
-					else
-						self.setHealthVisible(true)
-					end
-					if health > currentHealth then
-						self.healthMotor:setGoal(Flipper.Linear.new(self.humanoid.Health / self.humanoid.MaxHealth, {
-							velocity = self.motorVelocity;
-						}))
-					else
-						self.healthMotor:setGoal(Flipper.Instant.new(self.humanoid.Health / self.humanoid.MaxHealth))
-					end
-					currentHealth = health
+					self:healthChanged(health)
 				end)
 			end
 
@@ -107,6 +84,23 @@ function HUD:init()
 			self.setWeapon(newWeapon)
 		end))
 	end)
+end
+
+-- Only tween the health if we are regenerating health, otherwise make it instant
+function HUD:healthChanged(health)
+	if health <= 0 then
+		self.setHealthVisible(false)
+	else
+		self.setHealthVisible(true)
+	end
+	if health > self.currentHealth then
+		self.healthMotor:setGoal(Flipper.Linear.new(self.humanoid.Health / self.humanoid.MaxHealth, {
+			velocity = self.motorVelocity;
+		}))
+	else
+		self.healthMotor:setGoal(Flipper.Instant.new(self.humanoid.Health / self.humanoid.MaxHealth))
+	end
+	self.currentHealth = health
 end
 
 function HUD:render()

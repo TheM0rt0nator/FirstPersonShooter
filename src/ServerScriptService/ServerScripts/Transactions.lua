@@ -9,6 +9,8 @@ local loadModule, getDataStream = table.unpack(require(ReplicatedStorage.Framewo
 
 local superVoteEvent = getDataStream("SuperVoteEvent", "RemoteEvent")
 
+local DataStore = loadModule("DataStore")
+
 local MapHandler = loadModule("MapHandler")
  
 -- Data store for tracking purchases that were successfully processed
@@ -37,32 +39,30 @@ function Transactions.processReceipt(receiptInfo)
 	-- Determine if the product was already granted by checking the data store  
 	local playerProductKey = receiptInfo.PlayerId .. "_" .. receiptInfo.PurchaseId
  
-	local success, isPurchaseRecorded = pcall(function()
-		return purchaseHistoryStore:UpdateAsync(playerProductKey, function(alreadyPurchased)
-			if alreadyPurchased then
-				return true
-			end
- 
-			-- Find the player who made the purchase in the server
-			local player = Players:GetPlayerByUserId(receiptInfo.PlayerId)
-			if not player then
-				-- The player probably left the game
-				-- If they come back, the callback will be called again
-				return nil
-			end
- 
-			local handler = Transactions.productFunctions[receiptInfo.ProductId]
- 
-			local success, result = pcall(handler, receiptInfo, player)
-			-- If granting the product failed, do NOT record the purchase in datastores.
-			if not success or not result then
-				error("Failed to process a product purchase for ProductId:", receiptInfo.ProductId, " Player:", player)
-				return nil
-			end
- 
-			-- Record the transcation in purchaseHistoryStore.
+	local success, isPurchaseRecorded = DataStore.updateDataAsync(purchaseHistoryStore, playerProductKey, function(alreadyPurchased)
+		if alreadyPurchased then
 			return true
-		end)
+		end
+
+		-- Find the player who made the purchase in the server
+		local player = Players:GetPlayerByUserId(receiptInfo.PlayerId)
+		if not player then
+			-- The player probably left the game
+			-- If they come back, the callback will be called again
+			return nil
+		end
+
+		local handler = Transactions.productFunctions[receiptInfo.ProductId]
+
+		local success, result = pcall(handler, receiptInfo, player)
+		-- If granting the product failed, do NOT record the purchase in datastores.
+		if not success or not result then
+			error("Failed to process a product purchase for ProductId:", receiptInfo.ProductId, " Player:", player)
+			return nil
+		end
+
+		-- Record the transcation in purchaseHistoryStore.
+		return true
 	end)
  
 	if not success then

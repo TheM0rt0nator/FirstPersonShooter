@@ -171,6 +171,7 @@ function DataStore.updateDataAsync(dataStore, index, updateFunction)
 	else
 		DataStore.DataCache[dataStore][index] = nil
 	end
+	return success, errorMessage
 end
 
 -- Restores a previous version of data, closest to the given date in form {year = 2020, month = 3, day = 09, etc...} (accepts minDate and maxData, where only maxDate is compulsory)

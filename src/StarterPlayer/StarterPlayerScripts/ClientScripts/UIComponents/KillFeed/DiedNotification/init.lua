@@ -9,6 +9,7 @@ local camTypeChanged = getDataStream("CamTypeChanged", "BindableEvent")
 local Roact = loadModule("Roact")
 local Maid = loadModule("Maid")
 local CameraTypes = loadModule("CameraTypes")
+local ImageDirectory = loadModule("ImageDirectory")
 
 local player = Players.LocalPlayer
 
@@ -56,13 +57,28 @@ function DiedNotification:render()
 			return values[1] and values[2]
 		end);
 	}, {
-		MainFrame = Roact.createElement("Frame", {
+		Roact.createElement("Frame", {
 			BackgroundTransparency = 1;
 			Position = UDim2.new(0.392, 0, 0.1, 0);
 			Name = "MainFrame";
 			Size = UDim2.new(0.216, 0, 0.213, 0);
 			BackgroundColor3 = Color3.new(1, 1, 1);
 		}, {
+			WeaponLabel = Roact.createElement("ImageLabel", {
+				AnchorPoint = Vector2.new(0.5, 0);
+				ScaleType = Enum.ScaleType.Fit;
+				BackgroundTransparency = 1;
+				Position = UDim2.new(0.5, 0, 0.4, 0);
+				Name = "WeaponLabel";
+				Image = self.weapon:map(function(weapon)
+					if ImageDirectory[weapon .. "Icon"] then
+						return ImageDirectory[weapon .. "Icon"]
+					end
+				end);
+				Size = UDim2.new(0.6, 0, 0.6, 0);
+				BackgroundColor3 = Color3.new(1, 1, 1);
+			});
+		
 			KillerLabel = Roact.createElement("TextLabel", {
 				TextColor3 = Color3.new(0.624, 0, 0);
 				Text = self.killer:map(function(killer)
@@ -77,22 +93,20 @@ function DiedNotification:render()
 				BackgroundColor3 = Color3.new(1, 1, 1);
 			});
 		
-			WeaponLabel = Roact.createElement("TextLabel", {
+			WeaponName = Roact.createElement("TextLabel", {
+				FontSize = Enum.FontSize.Size14;
 				TextColor3 = Color3.new(0.624, 0, 0);
-				Text = self.weapon:map(function(weapon)
-					return "Weapon: " .. weapon
-				end);
-				Name = "WeaponLabel";
+				Text = self.weapon;
+				Name = "WeaponName";
+				AnchorPoint = Vector2.new(0.5, 0);
 				Font = Enum.Font.Oswald;
 				BackgroundTransparency = 1;
-				Position = UDim2.new(0.154, 0, 0.4, 0);
-				Size = UDim2.new(0.693, 0, 0.194, 0);
-				FontSize = Enum.FontSize.Size14;
+				Position = UDim2.new(0.5, 0, 1, 0);
+				Size = UDim2.new(0.4, 0, 0.25, 0);
 				TextScaled = true;
 				BackgroundColor3 = Color3.new(1, 1, 1);
 			});
 		})
-		
 	})
 end
 

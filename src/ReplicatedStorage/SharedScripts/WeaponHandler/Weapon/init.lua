@@ -369,14 +369,6 @@ function Weapon:reload()
 		self:aim(false)
 	end
 	self.reloading = true
-	task.spawn(function()
-		local success = reloadWeaponFunc:InvokeServer(self.name, self.ammo, self.spareBullets)
-		-- If server says we can't reload, is an exploiter so set ammo to 0
-		if not success then 
-			self.ammo = 0 
-			self.spareBullets = 0 
-		end
-	end)
 	-- Run animation
 	self.weaponHolder.Receiver.ReloadSound:Play()
 	self.loadedAnimations.reload:Play()
@@ -385,6 +377,14 @@ function Weapon:reload()
 		self.reloading = false
 		return 
 	end
+	task.spawn(function()
+		local success = reloadWeaponFunc:InvokeServer(self.name, self.ammo, self.spareBullets)
+		-- If server says we can't reload, is an exploiter so set ammo to 0
+		if not success then 
+			self.ammo = 0 
+			self.spareBullets = 0 
+		end
+	end)
 	local neededBullets = self.settings.magCapacity - self.ammo
 	local givenBullets = neededBullets
 	if neededBullets > self.spareBullets then

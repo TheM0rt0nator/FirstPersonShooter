@@ -25,10 +25,12 @@ function KitSelection:init()
 	self.debounce = false
 	task.spawn(function()
 		self.gameStatus = ReplicatedStorage:WaitForChild("GameValues"):WaitForChild("GameStatus")
-		local text = if self.gameStatus.Value == "GameRunning" then "DEPLOY" else "INTERMISSION"
+		local text = if self.gameStatus.Value == "GameRunning" then "DEPLOY" elseif self.gameStatus.Value == "ChoosingMap" then "LOADING MAP" else "INTERMISSION"
 		self.buttonVisible, self.setButtonVisible = Roact.createBinding(false)
 		if self.gameStatus.Value == "MapVoting" then
 			self.setButtonVisible(false)
+		else
+			self.setButtonVisible(true)
 		end
 		self.buttonText, self.setButtonText = Roact.createBinding(text)
 		self.maid:GiveTask(self.gameStatus.Changed:Connect(function()
